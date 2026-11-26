@@ -72,6 +72,8 @@
       Shift：加速　滾輪：調整移動速度　雙擊：重設視角</small>
     <details class="measurements">
       <summary>效能與光照比較</summary>
+      <label for="terrainStyle">山體材質</label>
+      <select id="terrainStyle"><option value="original">原版</option><option value="ink">皴紋版</option></select>
       <span id="fps" class="measurement-result">FPS —</span>
       <button id="measureLandscape" type="button">全景測 30 秒</button>
       <button id="measureWaterfall" type="button">瀑布測 30 秒</button>
@@ -400,12 +402,32 @@ void main(){
   // 石壁由大片積墨、斜向岩層與細碎皴擦組成，避免垂直拉絲。
   // 從接下來四行看筆觸來源：wash 是大片墨色，broken 是細皴擦，strata 是受坡度控制的岩層。
   float wash=fbm3(vWorld*vec3(0.075,0.065,0.075));
+#ifdef INK_STROKES
+  // 壓縮高度方向的取樣，把紋理沿山壁拉長。大片墨色讓筆觸有輕微彎折。
+  vec3 rockCoord=vec3(vWorld.x*0.46+h*0.14+wash*3.2,
+                      h*0.11,
+                      vWorld.z*0.46-h*0.19-wash*2.4);
+#else
   vec3 rockCoord=vec3(vWorld.x*0.25+h*0.045,h*0.22,vWorld.z*0.25-h*0.035);
+#endif
   float broken=fbm3(rockCoord);
+#ifdef INK_STROKES
+  // 用較粗的雜訊把細筆觸分成疏密不同的幾叢，減少整面山壁都有條紋的情形。
+  float vein=vnoise3(vWorld*vec3(0.12,0.16,0.12)+vec3(3.4,8.1,2.7));
+  float steep=smoothstep(0.12,0.53,slope);
+  float closeDetail=1.0-smoothstep(65.0,210.0,length(vView));
+  float strokes=smoothstep(0.52,0.72,broken)*smoothstep(0.36,0.67,vein);
+#else
   float vein=vnoise3(vec3(vWorld.x*0.11,h*0.43+wash*2.4,vWorld.z*0.11));
   float strata=smoothstep(0.56,0.73,vein)*slope;
+#endif
   // 這行的權重決定坡面、大片墨色和細紋各自佔多少，想看差別可以一次只動一項。
+#ifdef INK_STROKES
+  // 先鋪淡墨，再在近處偏陡的岩面加皴紋。遠處靠大塊墨色和輪廓辨識。
+  float dens=0.27+0.48*slope+0.38*(wash-0.5)+0.43*strokes*steep*closeDetail;
+#else
   float dens=0.42+0.50*slope+0.32*(wash-0.5)+0.20*(broken-0.5)+0.12*strata;
+#endif
   float lam=dot(n,uSunDir)*0.5+0.5;
   // 背光面加墨、朝光面減墨。比左右光照時可先固定 uSunInf，只轉太陽方位。
   dens+=uSunInf*(0.5-lam)*0.52;
@@ -424,8 +446,14 @@ void main(){
   // 38 到 240 是近景墨色轉向遠景冷色的距離範圍。
   float colorDistance=smoothstep(38.,240.,length(vView));
   // 近、遠景各有一組深墨與淡墨色。想減弱青色，可以先從這兩行試。
+#ifdef INK_STROKES
+  // 近景濃墨偏暖灰，遠山用淡灰青。兩種材質的太陽光照公式相同。
+  vec3 inkDark=mix(vec3(0.14,0.17,0.15),vec3(0.44,0.52,0.53),colorDistance);
+  vec3 inkLight=mix(vec3(0.54,0.59,0.53),vec3(0.71,0.77,0.76),colorDistance);
+#else
   vec3 inkDark=mix(vec3(0.14,0.30,0.33),vec3(0.29,0.52,0.63),colorDistance);
   vec3 inkLight=mix(vec3(0.50,0.65,0.63),vec3(0.65,0.80,0.86),colorDistance);
+#endif
   vec3 ink=mix(inkLight,inkDark,smoothstep(0.12,0.78,dens));
   vec3 col=mix(PAPER,ink,smoothstep(0.0,0.82,dens));
   float moss=(1.-smoothstep(0.35,0.75,slope))*smoothstep(0.46,0.68,wash)*air;
@@ -435,16 +463,27 @@ void main(){
   float ground=(1.-smoothstep(0.25,0.66,slope))*(1.-smoothstep(14.,40.,h));
   float patches=smoothstep(0.39,0.66,wash*0.58+broken*0.42);
   // 低地染上淺土綠色，保留淡墨層次和泥土質感。
+#ifdef INK_STROKES
+  // 讓土綠色留在局部坡地，空隙透出較淡的紙底。
+  col=mix(col,vec3(0.74,0.75,0.63),ground*(0.09+patches*0.24)*air);
+  col=mix(col,vec3(0.59,0.62,0.48),ground*patches*air*0.17);
+#else
   col=mix(col,vec3(0.72,0.79,0.60),ground*(0.23+patches*0.18)*air);
   col=mix(col,vec3(0.55,0.60,0.42),ground*patches*air*0.20);
+#endif
   float grit=vnoise3(vec3(vWorld.x*1.2,vWorld.z*1.2,4.7))-0.5;
   col+=vec3(grit*0.020*ground*(1.-smoothstep(35.,155.,length(vView))));
   col*=1.-wet*air*0.07;
   if(vBark>0.001){
     // 瀑布岩壁以灰青石層和濕痕分色，避免形成一整塊純黑立面。
     float fracture=vnoise3(vec3(vWorld.x*0.32,vWorld.y*0.44,vWorld.z*0.31));
+#ifdef INK_STROKES
+    vec3 stone=mix(inkDark,inkLight,0.64)
+      +vec3((broken-0.5)*0.17+(fracture-0.5)*0.09-0.17*strokes*closeDetail);
+#else
     vec3 stone=mix(vec3(0.35,0.50,0.52),vec3(0.52,0.69,0.75),colorDistance)
       +vec3((broken-0.5)*0.17+(fracture-0.5)*0.09);
+#endif
     float seam=fract(vWorld.y*0.19+vWorld.z*0.045+fracture*0.55);
     float rockLayer=smoothstep(0.68,0.88,seam)*(1.-smoothstep(0.88,1.,seam));
     float cleft=vnoise3(vWorld*vec3(0.70,0.07,0.70));
@@ -794,11 +833,20 @@ void main(){
 }`;
 // 各材質選用頂點著色器，再搭配各自的片段著色器。
 const progFall=makeProgram(VS_FALL,FS_FALL),UF=uniformGetter(progFall);
-const progTerrain=makeProgram(VS_PROP,FS_TERRAIN);
+// 用同一份地形著色器編出兩個版本，原版不會計算新版的皴紋。
+const terrainPrograms={
+  original:makeProgram(VS_PROP,FS_TERRAIN),
+  ink:makeProgram(VS_PROP,FS_TERRAIN.replace('#version 300 es\n','#version 300 es\n#define INK_STROKES\n'))
+};
+const terrainUniforms={
+  original:uniformGetter(terrainPrograms.original),
+  ink:uniformGetter(terrainPrograms.ink)
+};
+const terrainStyleSelect=document.getElementById('terrainStyle');
 const progProp   =makeProgram(VS_PROP,FS_PROP);
 const progWater  =makeProgram(VS_PROP,FS_WATER);
 const progSky    =makeProgram(VS_SKY,FS_SKY);
-const UT=uniformGetter(progTerrain), UP=uniformGetter(progProp),
+const UP=uniformGetter(progProp),
       UW=uniformGetter(progWater),   US=uniformGetter(progSky);
 
 /* =====================================================================
@@ -2174,8 +2222,10 @@ function drawWaterfall(mirror){
 
 // mirror = 0：正常世界；mirror = 1：對水面鏡射的世界（倒影）
 function drawScene(mirror){
-  // 地形
-  gl.useProgram(progTerrain);
+  // 主畫面和倒影都用選定的山體材質，各自取同一組地形資料。
+  const style=terrainStyleSelect.value;
+  const UT=terrainUniforms[style];
+  gl.useProgram(terrainPrograms[style]);
   setCommon(UT,mirror);
   setModel(UT,ID);
   gl.uniform3f(UT('uCliffSite'),waterfallSite.poolX,waterfallSite.z,waterfallSite.topY);
@@ -2263,7 +2313,7 @@ function updateFrameStatistics(ts){
 
   const run=measurement;
   if(!run)return;
-  const conditions=[...cam.pos,cam.yaw,cam.pitch,canvas.width,canvas.height,qualitySelect.value,sunAz,sunEl,sunInf,mistAmt,cloudAmt].join('/');
+  const conditions=[...cam.pos,cam.yaw,cam.pitch,canvas.width,canvas.height,qualitySelect.value,terrainStyleSelect.value,sunAz,sunEl,sunInf,mistAmt,cloudAmt].join('/');
   run.conditions??=conditions;
   if(conditions!==run.conditions||paused){
     stopMeasurement('量測條件有變動，請重新開始。');
@@ -2277,7 +2327,7 @@ function updateFrameStatistics(ts){
   if(elapsed>=30000){
     const total=run.seconds.reduce((sum,count)=>sum+count,0);
     document.getElementById(run.resultId).textContent=
-      run.label+'｜'+qualitySelect.selectedOptions[0].textContent+'｜'+canvas.width+' × '+canvas.height+
+      run.label+'｜'+terrainStyleSelect.selectedOptions[0].textContent+'｜'+qualitySelect.selectedOptions[0].textContent+'｜'+canvas.width+' × '+canvas.height+
       '｜平均 '+(total/30).toFixed(1)+' FPS｜最低 '+Math.min(...run.seconds)+' FPS';
     stopMeasurement('已完成 30 秒量測。');
     return;
@@ -2316,7 +2366,7 @@ function saveLightCapture(capture){
     const url=URL.createObjectURL(blob);
     const link=document.createElement('a');
     link.href=url;
-    link.download='山水全景-'+capture.label+'-'+capture.azimuth+'度.png';
+    link.download='山水全景-'+capture.style+'-'+capture.label+'-'+capture.azimuth+'度.png';
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),10000);
     lightStatus.textContent=capture.label+' '+capture.azimuth+'°，已送出 PNG 下載。';
@@ -2429,7 +2479,7 @@ function frame(ts){
   updateFrameStatistics(ts);
   if(pendingCapture){
     const capture=pendingCapture;pendingCapture=null;
-    saveLightCapture(capture);
+    saveLightCapture({...capture,style:terrainStyleSelect.selectedOptions[0].textContent});
   }
   animationId=requestAnimationFrame(frame);
 }
