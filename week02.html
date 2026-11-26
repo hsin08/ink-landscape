@@ -1,0 +1,2507 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>水墨山水 WebGL</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#f5f2eb;
+    font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif}
+  canvas{display:block;width:100vw;height:100vh;cursor:grab;touch-action:none;outline:none}
+  canvas:focus-visible{outline:2px solid #52736b;outline-offset:-3px}
+  canvas:active{cursor:grabbing}
+  #panel{position:fixed;top:12px;left:12px;width:min(236px,calc(100vw - 54px));max-height:calc(100dvh - 48px);overflow:auto;padding:8px 14px;
+    background:rgba(245,244,238,.84);border:1px solid rgba(60,70,70,.25);
+    border-radius:10px;color:#2d3a3a;font-size:13px;line-height:1.7;
+    backdrop-filter:blur(4px)}
+  #panel summary{cursor:pointer;font-weight:bold}
+  #panel .measurements{margin-top:8px;padding-top:8px;border-top:1px solid #aeb8b2}
+  #panel .measurement-result{display:block;font-variant-numeric:tabular-nums}
+  #panel label{display:block;margin-top:6px}
+  #panel input[type=range]{width:100%}
+  #panel small{display:block;margin-top:8px;color:#55635f;line-height:1.5}
+  #panel button{margin-top:8px;padding:3px 10px;border:1px solid #6b7b78;
+    background:#eef0ea;border-radius:6px;cursor:pointer;color:#2d3a3a}
+  #panel:has(> details:not([open])){width:auto}
+  #err{display:none;position:fixed;left:12px;right:12px;bottom:12px;max-height:40vh;
+    overflow:auto;background:#fff3f0;color:#a02818;border:1px solid #d9a199;
+    border-radius:8px;padding:10px;font:12px/1.5 monospace;white-space:pre-wrap}
+  #status{position:fixed;inset:0;display:grid;place-content:center;text-align:center;
+    background:rgba(213,215,208,.9);color:#2d3a3a;z-index:10;padding:24px}
+  #status[hidden]{display:none}
+  #status button{margin:12px auto;padding:8px 16px;cursor:pointer}
+  #touchControls{position:fixed;right:12px;bottom:12px;display:none;gap:6px;
+    grid-template-columns:repeat(3,48px);z-index:2}
+  #touchControls button{min-height:44px;background:rgba(245,244,238,.9);color:#2d3a3a;
+    border:1px solid #6b7b78;border-radius:8px;touch-action:none;user-select:none}
+  #touchControls button[aria-pressed="true"]{background:#adc2b5}
+  #touchControls button[data-key="KeyW"]{grid-column:2}
+  #touchControls button[data-key="KeyA"]{grid-column:1}
+  @media(any-pointer:coarse),(max-width:640px){#touchControls{display:grid}}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="互動水墨山水，可拖曳視角，使用 W A S D 移動、Q E 升降。"></canvas>
+<div id="status" role="status"><span id="statusText">正在準備山水畫境…</span><button id="reload" hidden>重新載入</button></div>
+
+<div id="panel">
+  <details open>
+    <summary>水墨山水・控制</summary>
+    <label>太陽方位 <span id="azv"></span>°
+      <input type="range" id="az" min="0" max="360" value="28"></label>
+    <label>太陽高度 <span id="elv"></span>°
+      <input type="range" id="el" min="4" max="80" value="20"></label>
+    <label>光影影響強度 <span id="infv"></span>
+      <input type="range" id="inf" min="0" max="1.5" step="0.05" value="0.5"></label>
+    <label>霧氣濃度 <span id="mistv"></span>
+      <input type="range" id="mist" min="0" max="1.5" step="0.05" value="1"></label>
+    <label>雲氣濃淡 <span id="cloudv"></span>
+      <input type="range" id="cloud" min="0" max="1.5" step="0.05" value="1"></label>
+    <label>畫質
+      <select id="quality"><option value="balanced">標準</option><option value="high">高畫質</option><option value="low">省電</option></select></label>
+    <label>移動速度 <span id="speedv"></span>
+      <input type="range" id="speed" min="5" max="200" step="1" value="25"></label>
+    <button id="reset">重設視角</button>
+    <button id="boatView">小船視角</button>
+    <button id="waterfallView">瀑布視角</button>
+    <button id="flowerView">花岸視角</button>
+    <button id="landscapeView">山水全景</button>
+    <button id="bridgeView">石橋視角</button>
+    <button id="pause" aria-pressed="false">暫停動畫</button>
+    <small>拖曳：轉視角　W/A/S/D：移動　Q/E：下降/上升<br>
+      Shift：加速　滾輪：調整移動速度　雙擊：重設視角</small>
+    <details class="measurements">
+      <summary>效能與光照比較</summary>
+      <label for="terrainStyle">山體材質</label>
+      <select id="terrainStyle"><option value="original">原版</option><option value="ink">皴紋版</option></select>
+      <span id="fps" class="measurement-result">FPS —</span>
+      <button id="measureLandscape" type="button">全景測 30 秒</button>
+      <button id="measureWaterfall" type="button">瀑布測 30 秒</button>
+      <span id="measureStatus" class="measurement-result" role="status"></span>
+      <span id="landscapeResult" class="measurement-result"></span>
+      <span id="waterfallResult" class="measurement-result"></span>
+      <button id="lightLeft" type="button">左光截圖</button>
+      <button id="lightRight" type="button">右光截圖</button>
+      <span id="lightStatus" class="measurement-result" role="status"></span>
+    </details>
+  </details>
+</div>
+<div id="touchControls" aria-label="移動控制">
+  <button data-key="KeyW" aria-label="前進" aria-pressed="false">前</button>
+  <button data-key="KeyA" aria-label="向左移動" aria-pressed="false">左</button>
+  <button data-key="KeyS" aria-label="後退" aria-pressed="false">後</button>
+  <button data-key="KeyD" aria-label="向右移動" aria-pressed="false">右</button>
+  <button data-key="KeyQ" aria-label="下降" aria-pressed="false">下降</button>
+  <button data-key="KeyE" aria-label="上升" aria-pressed="false">上升</button>
+</div>
+<div id="err" role="alert"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   水墨山水 WebGL2（單一檔案，不需要任何外部模型或圖片）
+   內容：程式生成地形（山、河谷、河中岩島）、松樹、水面倒影、
+         小船、飛鳥、天空與太陽、霧氣、水墨著色器、自由視角
+   ===================================================================== */
+
+/* ---------- 錯誤訊息顯示（著色器出錯時會顯示在畫面下方） ---------- */
+function fail(m){
+  const e=document.getElementById('err');
+  e.style.display='block'; e.textContent+=m+'\n'; console.error(m);
+}
+
+(async function main(){
+const status=document.getElementById('status'), statusText=document.getElementById('statusText');
+const reloadButton=document.getElementById('reload');
+reloadButton.addEventListener('click',()=>location.reload());
+// 每批地形或植被生成之間讓瀏覽器先更新載入畫面。
+const yieldUI=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+// 窄螢幕預設收起控制面板，讓畫面有更多空間。
+const compactPanel=matchMedia('(max-width:640px)');
+const adaptPanel=e=>{if(e.matches)document.querySelector('#panel details').open=false;};
+adaptPanel(compactPanel);compactPanel.addEventListener('change',adaptPanel);
+await yieldUI(); await yieldUI();
+
+/* =====================================================================
+   一、地形數學（純 JS，CPU 端計算）
+   ===================================================================== */
+// 地形計算開始。
+// N 決定網格密度。加大後輪廓會更細，頂點數也會以平方成長。
+const SIZE=560, HALF=SIZE/2, N=360;     // 地形邊長、半邊長、網格切割數
+
+// 整數雜湊 → 0~1 的偽隨機數
+function hash2(x,y){
+  let h=(Math.imul(x,374761393)+Math.imul(y,668265263))|0;
+  h=Math.imul(h^(h>>>13),1274126177);
+  h^=h>>>16;
+  return (h>>>0)/4294967296;
+}
+function fade(t){return t*t*t*(t*(t*6-15)+10);}
+// 二維值雜訊。
+function vnoise(x,y){
+  const ix=Math.floor(x), iy=Math.floor(y);
+  const fx=x-ix, fy=y-iy, u=fade(fx), v=fade(fy);
+  const a=hash2(ix,iy), b=hash2(ix+1,iy), c=hash2(ix,iy+1), d=hash2(ix+1,iy+1);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+}
+// 多層疊加（fBm）
+function fbm(x,y,oct){
+  oct=oct||4; let s=0,a=0.5,f=1,n=0;
+  for(let i=0;i<oct;i++){s+=a*vnoise(x*f,y*f);n+=a;a*=0.5;f*=2.03;}
+  return s/n;
+}
+// 將雜訊取絕對值後反轉，形成尖銳的山稜線。
+function ridged(x,y,oct){
+  oct=oct||5; let s=0,a=0.5,f=1,n=0;
+  for(let i=0;i<oct;i++){
+    const v=1-Math.abs(2*vnoise(x*f,y*f)-1);
+    s+=a*v*v; n+=a; a*=0.5; f*=2.07;
+  }
+  return s/n;
+}
+function smoothstep(a,b,x){
+  const t=Math.min(1,Math.max(0,(x-a)/(b-a)));
+  return t*t*(3-2*t);
+}
+
+// 河道中心線（x 隨 z 彎曲）與河寬
+// 兩組 sin 的振幅控制河道左右偏移，頻率控制彎道密度。
+function riverX(z){return 14*Math.sin(z*0.018)+6*Math.sin(z*0.05+1.0);}
+// 中心線的斜率，後面用來算船頭朝向。
+function riverDX(z){return 14*0.018*Math.cos(z*0.018)+6*0.05*Math.cos(z*0.05+1.0);}
+// 這裡回傳中心線到單側岸邊的距離，13 是基底，7 是寬度變化的幅度。
+function riverW(z){return 13+7*vnoise(z*0.012,3.1);}
+
+// 寬厚的山體骨架：[中心 x、z、山高、橫向半徑、縱向半徑]。
+// 先有大體積，再疊加山脊與侵蝕細節，避免整張地圖都是細長尖塔。
+const MASSIFS=[
+  [-116,138,90,66,76],[-145,28,134,75,86],[-100,-78,112,57,73],
+  [-163,-176,145,79,76],[-66,-216,86,42,61],
+  [126,126,114,77,84],[152,4,146,75,84],[100,-105,109,53,70],
+  [164,-193,154,75,73],[57,-224,76,38,54]
+];
+function terrainH(x,z){
+  const d=Math.abs(x-riverX(z)),w=riverW(z);
+  // bank 控制離開河床後的抬升，valley 控制從低岸過渡到山腳的範圍。
+  const bank=smoothstep(w-4,w+11,d),valley=smoothstep(w+4,w+86,d);
+  // 低頻扭曲打破規則圓丘；保留完整山肩與連續山脊。
+  const qx=x+(fbm(x*0.008+8,z*0.008,3)-0.5)*27;
+  const qz=z+(fbm(x*0.008,z*0.008+13,3)-0.5)*23;
+  let volume=0;
+  for(const p of MASSIFS){
+    const dx=(qx-p[0])/p[3],dz=(qz-p[1])/p[4];
+    const shoulder=0.94+0.09*Math.sin(dx*3.7+dz*2.2)+0.05*Math.sin(dz*5.1-dx*1.8);
+    const dome=p[2]*Math.exp(-1.28*(dx*dx+dz*dz))*shoulder;
+    volume+=dome*dome*dome*dome;
+  }
+  const body=Math.pow(volume,0.25);
+  const ridge=ridged(qx*0.015+3.7,qz*0.015-1.3,3);
+  // 25 控制山脊起伏，6 控制較小的地表破碎感，會改到地形輪廓。
+  const folds=(ridge-0.46)*25+(fbm(qx*0.041+5,qz*0.041,3)-0.5)*6;
+  let h=valley*Math.max(0,body+folds*smoothstep(8,45,body));
+  // 水邊有低丘與碎岩，岸線不直接接上高聳直壁。
+  h+=bank*(1-valley)*(3.2+5.0*fbm(x*0.035+9,z*0.035+2,3));
+  const rock=Math.max(0,fbm(x*0.075+11,z*0.075+4,3)-0.57);
+  h+=rock*rock*42*smoothstep(w,w+9,d)*(1-smoothstep(w+14,w+40,d));
+  h+=bank*1.7-(1-bank)*4.5;
+  const e=Math.max(Math.abs(x),Math.abs(z))/HALF;
+  const edge=1-smoothstep(0.77,1.0,e);
+  return h*edge-8*(1-edge);
+}
+// 地形計算結束。
+
+/* =====================================================================
+   二、矩陣工具（column-major，與 WebGL 一致）
+   ===================================================================== */
+const M={
+  ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);},
+  mul(a,b){
+    const o=new Float32Array(16);
+    for(let c=0;c<4;c++)for(let r=0;r<4;r++){
+      let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k];
+      o[c*4+r]=s;
+    }
+    return o;
+  },
+  persp(fovy,asp,n,f){
+    const t=1/Math.tan(fovy/2), o=new Float32Array(16);
+    o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f);
+    return o;
+  },
+  // 用相機位置、視線和朝上的方向建立視圖矩陣。
+  look(e,fw,up){
+    let z=[-fw[0],-fw[1],-fw[2]];
+    let x=[up[1]*z[2]-up[2]*z[1], up[2]*z[0]-up[0]*z[2], up[0]*z[1]-up[1]*z[0]];
+    const lx=Math.hypot(x[0],x[1],x[2]); x=[x[0]/lx,x[1]/lx,x[2]/lx];
+    const y=[z[1]*x[2]-z[2]*x[1], z[2]*x[0]-z[0]*x[2], z[0]*x[1]-z[1]*x[0]];
+    return new Float32Array([
+      x[0],y[0],z[0],0,  x[1],y[1],z[1],0,  x[2],y[2],z[2],0,
+      -(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),
+      -(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),
+      -(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]), 1]);
+  },
+  trans(x,y,z){const o=M.ident();o[12]=x;o[13]=y;o[14]=z;return o;},
+  scale(x,y,z){const o=M.ident();o[0]=x;o[5]=y;o[10]=z;return o;},
+  rotY(a){const c=Math.cos(a),s=Math.sin(a),o=M.ident();o[0]=c;o[2]=-s;o[8]=s;o[10]=c;return o;},
+  rotX(a){const c=Math.cos(a),s=Math.sin(a),o=M.ident();o[5]=c;o[6]=s;o[9]=-s;o[10]=c;return o;},
+  rotZ(a){const c=Math.cos(a),s=Math.sin(a),o=M.ident();o[0]=c;o[1]=s;o[4]=-s;o[5]=c;return o;}
+};
+function chain(){ // 依序相乘：chain(A,B,C) = A*B*C
+  let r=arguments[0];
+  for(let i=1;i<arguments.length;i++) r=M.mul(r,arguments[i]);
+  return r;
+}
+
+/* =====================================================================
+   三、WebGL 初始化
+   ===================================================================== */
+const canvas=document.getElementById('c');
+// 建立 WebGL2 繪圖環境，畫布使用不透明背景。
+const gl=canvas.getContext('webgl2',{antialias:true,alpha:false});
+if(!gl) throw new Error('這個瀏覽器不支援 WebGL2，請改用支援 WebGL2 的瀏覽器。');
+let animationId=0, ready=false;
+const maxRenderSize=Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),gl.getParameter(gl.MAX_TEXTURE_SIZE));
+canvas.addEventListener('webglcontextlost',e=>{
+  e.preventDefault(); cancelAnimationFrame(animationId); animationId=0;
+  if(ready){clearInput();stopMeasurement('繪圖連線中斷，請重新量測。');}
+  status.hidden=false; statusText.textContent='繪圖連線已中斷，恢復後將重新載入。';reloadButton.hidden=false;
+});
+canvas.addEventListener('webglcontextrestored',()=>location.reload());
+
+// 分別編譯 GLSL 的頂點與片段程式，出錯時把編譯訊息帶回頁面。
+function compile(type,src){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    const message=(type===gl.VERTEX_SHADER?'Vertex':'Fragment')+' Shader 編譯失敗：\n'+gl.getShaderInfoLog(s);
+    gl.deleteShader(s); throw new Error(message);
+  }
+  return s;
+}
+function makeProgram(vs,fs){
+  const p=gl.createProgram();
+  let vertex,fragment;
+  try{
+    vertex=compile(gl.VERTEX_SHADER,vs); fragment=compile(gl.FRAGMENT_SHADER,fs);
+    gl.attachShader(p,vertex); gl.attachShader(p,fragment); gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error('Program 連結失敗：\n'+gl.getProgramInfoLog(p));
+    return p;
+  }catch(error){gl.deleteProgram(p);throw error;}
+  finally{if(vertex)gl.deleteShader(vertex);if(fragment)gl.deleteShader(fragment);}
+}
+// 快取 uniform 的位置，避免每幀用相同名字重新查找。
+function uniformGetter(p){
+  const cache={};
+  return function(n){
+    if(!(n in cache)) cache[n]=gl.getUniformLocation(p,n);
+    return cache[n];
+  };
+}
+
+/* =====================================================================
+   四、著色器
+   ===================================================================== */
+// 共用：紙張底色、3D 雜訊、紙張顆粒
+const GLSL_COMMON=`
+// PAPER 是共用紙色，HORIZON 是地平線附近的霧色。
+const vec3 PAPER=vec3(0.962,0.951,0.923);
+const vec3 HORIZON=mix(PAPER,vec3(0.78,0.89,0.93),0.40);
+float hash13(vec3 p3){
+  p3=fract(p3*.1031);
+  p3+=dot(p3,p3.zyx+31.32);
+  return fract((p3.x+p3.y)*p3.z);
+}
+float vnoise3(vec3 p){
+  vec3 i=floor(p), f=fract(p);
+  f=f*f*f*(f*(f*6.-15.)+10.);
+  float a=hash13(i), b=hash13(i+vec3(1,0,0)), c=hash13(i+vec3(0,1,0)), d=hash13(i+vec3(1,1,0));
+  float e=hash13(i+vec3(0,0,1)), g=hash13(i+vec3(1,0,1)), h=hash13(i+vec3(0,1,1)), k=hash13(i+vec3(1,1,1));
+  return mix(mix(mix(a,b,f.x),mix(c,d,f.x),f.y), mix(mix(e,g,f.x),mix(h,k,f.x),f.y), f.z);
+}
+// 疊四層不同尺度的值雜訊，供山體墨色、霧和水紋取樣。
+float fbm3(vec3 p){
+  float s=0., a=.5;
+  for(int i=0;i<4;i++){ s+=a*vnoise3(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=.5; }
+  return s/0.9375;
+}
+// 霧集中在低谷，遠方較濃；距離交給呼叫端計算，近景保留實體感。
+float sceneMist(vec3 world,float time,float amount){
+  float mn=fbm3(vec3(world.x*0.014,world.y*0.035,world.z*0.014)+vec3(0.,time*0.018,0.));
+  // base 集中在低谷，band 再補一層較高、較稀疏的霧帶。
+  float base=(1.-smoothstep(2.,32.,world.y))*(0.28+0.48*mn);
+  float band=smoothstep(0.54,0.77,fbm3(vec3(world.x*0.009+time*0.002,world.y*0.028,world.z*0.009)));
+  float dh=(world.y-43.)/19.;
+  return clamp((base+band*exp(-dh*dh)*0.36)*amount,0.,1.);
+}
+// 顆粒取樣使用畫面像素座標，適合用來看紙面顆粒的強弱。
+float grain(){ return fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453); }
+`;
+
+// 地形、道具和水面共用的頂點著色器。
+// uMirror = 1 時把整個世界對水面 y=0 做鏡射，用來畫倒影
+const VS_PROP=`#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNor;
+layout(location=2) in vec4 aInst;      // xyz = 位置，w = 均勻縮放
+layout(location=3) in vec3 aStyle;     // 樹木：方位角、橫向比例、墨色差異
+layout(location=4) in float aBark;     // 樹幹與針葉分開著色
+uniform float uVegetation, uWind, uTime;
+uniform mat4 uVP;
+uniform mat4 uModel;
+uniform mat3 uNormal;
+uniform float uMirror;
+uniform vec3 uCam;
+out vec3 vWorld;   // 未鏡射的世界座標（雜訊與高度判斷用）
+out vec3 vN;       // 未鏡射的法線（光照用）
+out vec3 vNm;      // 鏡射後的法線（輪廓邊緣用）
+out vec3 vView;
+out float vBark;
+out float vTone;
+void main(){
+  vec3 local=aPos,normal=aNor;
+  // 實例資料指定每株植被的位置和外觀，同一個網格可以重複使用。
+  if(uVegetation>0.5){
+    // 只讓岸草與蘆葦輕擺，樹木與其他景物不受此項風量影響。
+    float bend=pow(max(local.y,0.),1.5)*uWind;
+    local.x+=sin(uTime*0.65+aInst.x*0.21+aInst.z*0.14)*bend;
+    local.z+=cos(uTime*0.43+aInst.x*0.13)*bend*0.35;
+    float c=cos(aStyle.x),s=sin(aStyle.x);
+    mat3 rotation=mat3(c,0.,-s,0.,1.,0.,s,0.,c);
+    local=rotation*(local*vec3(aStyle.y,1.,aStyle.y));
+    normal=rotation*(normal/vec3(aStyle.y,1.,aStyle.y));
+  }
+  vec3 w=(uModel*vec4(local,1.0)).xyz*aInst.w+aInst.xyz;
+  vec3 n=normalize(uNormal*normal);
+  vBark=aBark;vTone=uVegetation>0.5?aStyle.z:1.;
+  // 倒影只翻轉投影用的位置和法線，材質紋理仍取原本的世界座標。
+  vec3 wm=w; vec3 nm=n;
+  if(uMirror>0.5){ wm.y=-wm.y; nm.y=-nm.y; }
+  vWorld=w; vN=n; vNm=nm;
+  vView=uCam-wm;
+  gl_Position=uVP*vec4(wm,1.0);
+}`;
+
+// 山體的片段著色器。
+const FS_TERRAIN=`#version 300 es
+precision highp float;
+in vec3 vWorld; in vec3 vN; in vec3 vNm; in vec3 vView;
+in float vBark;
+uniform vec3 uSunDir, uCliffSite;
+uniform float uSunInf, uFar, uTime, uMist;
+out vec4 o;
+`+GLSL_COMMON+`
+void main(){
+  if(vWorld.y<0.0) discard;                 // 水面以下的河床不畫，改由水面與倒影呈現
+
+  vec3 n=normalize(vN);
+  float t=clamp(length(vView)/uFar,0.,1.);          // 將視距換算到 0 至 1，0 為最近，1 為最遠。
+  float h=vWorld.y;
+  float slope=1.0-clamp(n.y,0.,1.);         // 越陡越黑
+
+  // 石壁由大片積墨、斜向岩層與細碎皴擦組成，避免垂直拉絲。
+  // 從接下來四行看筆觸來源：wash 是大片墨色，broken 是細皴擦，strata 是受坡度控制的岩層。
+  float wash=fbm3(vWorld*vec3(0.075,0.065,0.075));
+#ifdef INK_STROKES
+  // 壓縮高度方向的取樣，把紋理沿山壁拉長。大片墨色讓筆觸有輕微彎折。
+  vec3 rockCoord=vec3(vWorld.x*0.46+h*0.14+wash*3.2,
+                      h*0.11,
+                      vWorld.z*0.46-h*0.19-wash*2.4);
+#else
+  vec3 rockCoord=vec3(vWorld.x*0.25+h*0.045,h*0.22,vWorld.z*0.25-h*0.035);
+#endif
+  float broken=fbm3(rockCoord);
+#ifdef INK_STROKES
+  // 用較粗的雜訊把細筆觸分成疏密不同的幾叢，減少整面山壁都有條紋的情形。
+  float vein=vnoise3(vWorld*vec3(0.12,0.16,0.12)+vec3(3.4,8.1,2.7));
+  float steep=smoothstep(0.12,0.53,slope);
+  float closeDetail=1.0-smoothstep(65.0,210.0,length(vView));
+  float strokes=smoothstep(0.52,0.72,broken)*smoothstep(0.36,0.67,vein);
+#else
+  float vein=vnoise3(vec3(vWorld.x*0.11,h*0.43+wash*2.4,vWorld.z*0.11));
+  float strata=smoothstep(0.56,0.73,vein)*slope;
+#endif
+  // 這行的權重決定坡面、大片墨色和細紋各自佔多少，想看差別可以一次只動一項。
+#ifdef INK_STROKES
+  // 先鋪淡墨，再在近處偏陡的岩面加皴紋。遠處靠大塊墨色和輪廓辨識。
+  float dens=0.27+0.48*slope+0.38*(wash-0.5)+0.43*strokes*steep*closeDetail;
+#else
+  float dens=0.42+0.50*slope+0.32*(wash-0.5)+0.20*(broken-0.5)+0.12*strata;
+#endif
+  float lam=dot(n,uSunDir)*0.5+0.5;
+  // 背光面加墨、朝光面減墨。比左右光照時可先固定 uSunInf，只轉太陽方位。
+  dens+=uSunInf*(0.5-lam)*0.52;
+  float rim=pow(clamp(1.0-abs(dot(normalize(vNm),normalize(vView))),0.,1.),3.0);
+  // 0.16 是斜視輪廓的加墨量。想看山脊邊緣線有多硬，可以調小再比較。
+  dens+=0.16*rim*smoothstep(0.1,0.6,slope);
+  // 岸線濕墨與局部苔痕，讓山體確實落在水邊。
+  // 依高度增加水邊的濕墨，wash 讓濕痕的上緣高低不一。
+  float wet=(1.-smoothstep(0.15,1.6+wash*2.2,h));
+  dens+=wet*0.13;
+  float mist=sceneMist(vWorld,uTime,uMist)*(0.22+0.78*smoothstep(28.,230.,length(vView)));
+  // 霧和距離會依序降低墨量。0.72 越大，霧帶裡的山腳越接近紙色。
+  dens=clamp(dens,0.,1.)*(1.-0.72*mist);
+  float air=exp(-pow(length(vView)/uFar,1.5)*2.1);
+  dens*=air;
+  // 38 到 240 是近景墨色轉向遠景冷色的距離範圍。
+  float colorDistance=smoothstep(38.,240.,length(vView));
+  // 近、遠景各有一組深墨與淡墨色。想減弱青色，可以先從這兩行試。
+#ifdef INK_STROKES
+  // 近景濃墨偏暖灰，遠山用淡灰青。兩種材質的太陽光照公式相同。
+  vec3 inkDark=mix(vec3(0.14,0.17,0.15),vec3(0.44,0.52,0.53),colorDistance);
+  vec3 inkLight=mix(vec3(0.54,0.59,0.53),vec3(0.71,0.77,0.76),colorDistance);
+#else
+  vec3 inkDark=mix(vec3(0.14,0.30,0.33),vec3(0.29,0.52,0.63),colorDistance);
+  vec3 inkLight=mix(vec3(0.50,0.65,0.63),vec3(0.65,0.80,0.86),colorDistance);
+#endif
+  vec3 ink=mix(inkLight,inkDark,smoothstep(0.12,0.78,dens));
+  vec3 col=mix(PAPER,ink,smoothstep(0.0,0.82,dens));
+  float moss=(1.-smoothstep(0.35,0.75,slope))*smoothstep(0.46,0.68,wash)*air;
+  col=mix(col,col*vec3(0.91,0.97,0.87),moss*0.22);
+  // 平緩低地用斷續土色與苔痕接住樹根，不再像一整塊光滑底座。
+  // 低地遮罩同時看坡度和高度，讓土色主要留在平緩的岸坡。
+  float ground=(1.-smoothstep(0.25,0.66,slope))*(1.-smoothstep(14.,40.,h));
+  float patches=smoothstep(0.39,0.66,wash*0.58+broken*0.42);
+  // 低地染上淺土綠色，保留淡墨層次和泥土質感。
+#ifdef INK_STROKES
+  // 讓土綠色留在局部坡地，空隙透出較淡的紙底。
+  col=mix(col,vec3(0.74,0.75,0.63),ground*(0.09+patches*0.24)*air);
+  col=mix(col,vec3(0.59,0.62,0.48),ground*patches*air*0.17);
+#else
+  col=mix(col,vec3(0.72,0.79,0.60),ground*(0.23+patches*0.18)*air);
+  col=mix(col,vec3(0.55,0.60,0.42),ground*patches*air*0.20);
+#endif
+  float grit=vnoise3(vec3(vWorld.x*1.2,vWorld.z*1.2,4.7))-0.5;
+  col+=vec3(grit*0.020*ground*(1.-smoothstep(35.,155.,length(vView))));
+  col*=1.-wet*air*0.07;
+  if(vBark>0.001){
+    // 瀑布岩壁以灰青石層和濕痕分色，避免形成一整塊純黑立面。
+    float fracture=vnoise3(vec3(vWorld.x*0.32,vWorld.y*0.44,vWorld.z*0.31));
+#ifdef INK_STROKES
+    vec3 stone=mix(inkDark,inkLight,0.64)
+      +vec3((broken-0.5)*0.17+(fracture-0.5)*0.09-0.17*strokes*closeDetail);
+#else
+    vec3 stone=mix(vec3(0.35,0.50,0.52),vec3(0.52,0.69,0.75),colorDistance)
+      +vec3((broken-0.5)*0.17+(fracture-0.5)*0.09);
+#endif
+    float seam=fract(vWorld.y*0.19+vWorld.z*0.045+fracture*0.55);
+    float rockLayer=smoothstep(0.68,0.88,seam)*(1.-smoothstep(0.88,1.,seam));
+    float cleft=vnoise3(vWorld*vec3(0.70,0.07,0.70));
+    stone*=1.-rockLayer*slope*0.16-smoothstep(0.58,0.78,cleft)*0.12;
+    stone*=0.89+0.20*lam;
+    float track=exp(-pow((vWorld.z-uCliffSite.y)/3.6,2.));
+    stone*=1.-track*0.10;
+    col=mix(col,mix(PAPER,stone,air*0.90),vBark*0.68);
+  }
+  col=mix(col,HORIZON,smoothstep(90.,330.,length(vView))*0.16);
+  // 最後才疊微量紙面顆粒，方便單獨比較紙紋對前景的影響。
+  col*=0.994+0.012*grain();
+  o=vec4(col,1.0);
+}`;
+
+// 松樹、小船和飛鳥共用的片段著色器。
+const FS_PROP=`#version 300 es
+precision highp float;
+in vec3 vWorld; in vec3 vN; in vec3 vNm; in vec3 vView;
+in float vBark; in float vTone;
+uniform float uVegetation, uStone, uTreeColor, uBlossom;
+uniform vec3 uSunDir, uColor, uBarkColor;
+uniform float uSunInf, uFar, uTime, uMist, uDens, uClip, uFlat;
+out vec4 o;
+`+GLSL_COMMON+`
+void main(){
+  if(vWorld.y<uClip) discard;
+  vec3 n=normalize(vN);
+  float t=clamp(length(vView)/uFar,0.,1.);
+  float lam=dot(n,uSunDir)*0.5+0.5;
+  float fol=0.5;
+  if(uFlat<0.5) fol=fbm3(vWorld*3.5);       // 平塗物件略過針葉雜訊
+  // 葉簇輪廓以碎墨形成局部缺口；內部保持量感，遠處逐漸失去硬邊。
+  if(uTreeColor>0.5&&vBark< -0.5){
+    float detail=1.-smoothstep(70.,180.,length(vView));
+    float silhouette=pow(1.-abs(dot(normalize(vNm),normalize(vView))),2.);
+    if(fol<(0.12+silhouette*0.14)*detail)discard;
+  }
+  // uDens 是道具的基礎墨量，vTone 是每棵樹的深淺差異。
+  float dens=uDens*vTone*(0.92+0.20*(fol-0.5)*(1.0-uFlat));
+  dens+=uSunInf*(0.5-lam)*0.5;
+  // 山腳的霧也要蓋到樹上
+  float mist=sceneMist(vWorld,uTime,uMist)*(0.22+0.78*smoothstep(28.,230.,length(vView)));
+  dens=clamp(dens,0.,1.)*(1.0-0.72*mist);
+  dens*=exp(-pow(length(vView)/uFar,1.5)*2.1);
+  vec3 color=uColor;
+  if(uVegetation>0.5){
+    if(uTreeColor>0.5&&uBlossom<0.5){
+      // 用每棵樹自己的墨色係數微調葉色，移動鏡頭時色調維持穩定。
+      float tint=clamp((vTone-0.86)/0.18,0.,1.);
+      float warmLeaf=smoothstep(0.22,0.45,uColor.r);
+      color=mix(uColor,uColor*vec3(0.85,0.96,1.03),(1.-tint)*0.32);
+      color=mix(color,uColor*vec3(1.10,1.045,0.87),tint*warmLeaf*0.40);
+      color=mix(color,vec3(0.70,0.76,0.44),smoothstep(0.45,0.9,lam)*warmLeaf*0.12);
+    }
+    if(uBlossom>0.5)color=mix(uColor,vec3(0.98,0.86,0.85),smoothstep(0.35,0.72,fol)*0.48);
+    color=mix(color,uBarkColor,smoothstep(0.3,0.7,vBark));
+  }
+  if(uStone>0.5){
+    // 依表面朝向選投影平面，再交錯排列石磚與灰縫。
+    vec2 stoneUV=abs(n.y)>0.65?vWorld.xz:(abs(n.z)>abs(n.x)?vWorld.xy:vWorld.zy);
+    float row=floor(stoneUV.y/0.62);
+    vec2 grid=vec2(stoneUV.x/1.35+mod(row,2.)*0.5,stoneUV.y/0.62);
+    vec2 edge=min(fract(grid),1.-fract(grid));
+    vec2 aa=max(fwidth(grid),vec2(0.003));
+    float mortar=1.-smoothstep(0.025,0.025+max(aa.x,aa.y),min(edge.x,edge.y));
+    float block=hash13(vec3(floor(grid),7.1));
+    color*=0.92+block*0.16;
+    color=mix(color,color*0.68,mortar*0.46);
+  }
+  vec3 col=mix(PAPER,color,dens);
+  if(uTreeColor>0.5)col=mix(col,HORIZON,smoothstep(60.,260.,length(vView))*0.18);
+  if(uTreeColor>0.5&&vBark< -0.5){
+    float edge=pow(1.-abs(dot(normalize(vNm),normalize(vView))),2.);
+    float lost=edge*smoothstep(35.,180.,length(vView))
+      *smoothstep(0.40,0.70,vnoise3(vWorld*0.72))*0.40;
+    col=mix(col,HORIZON,lost);
+  }
+  col*=0.994+0.012*grain();
+  o=vec4(col,1.0);
+}`;
+
+// 水面：淡墨底、斷續細波、擾動倒影；局部保留暖金反光。
+const FS_WATER=`#version 300 es
+precision highp float;
+in vec3 vWorld; in vec3 vN; in vec3 vNm; in vec3 vView;
+uniform vec3 uSunDir;
+uniform float uSunInf, uFar, uTime;
+uniform sampler2D uReflection;
+uniform vec2 uResolution,uReflectionTexel;
+uniform vec4 uBoat;
+uniform vec4 uBoatTrail[17];
+out vec4 o;
+`+GLSL_COMMON+`
+// 隨機散落的有限長弧線，每筆各自有方向、寬度、彎曲與濃淡。
+// 不使用全河共用的正弦相位，避免形成等距橫線。
+vec2 waterMarks(vec2 p,float time,float cluster){
+  vec2 flow=p-vec2(time*0.055,time*0.085);
+  // 將水面分格，每格用雜湊決定筆觸的位置，再檢查周圍九格的筆觸。
+  vec2 cellSize=vec2(9.5,7.5),cell=floor(flow/cellSize);
+  vec2 marks=vec2(0.);
+  float pixelWidth=max(length(dFdx(flow)),length(dFdy(flow)));
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+    vec2 id=cell+vec2(float(i),float(j));
+    float seed=hash13(vec3(id,17.3));
+    vec2 jitter=vec2(hash13(vec3(id,31.7)),hash13(vec3(id,57.1)));
+    vec2 centre=(id+jitter)*cellSize;
+    float angle=(hash13(vec3(id,81.9))-0.5)*1.10+(cluster-0.5)*0.35;
+    float c=cos(angle),s=sin(angle);
+    vec2 d=flow-centre;
+    vec2 local=vec2(c*d.x+s*d.y,-s*d.x+c*d.y);
+    float lengthOfMark=1.1+4.3*hash13(vec3(id,105.2));
+    float width=0.045+0.14*hash13(vec3(id,133.4));
+    float curve=(jitter.y-0.5)*0.12*local.x*local.x;
+    float across=abs(local.y-curve);
+    float aa=max(pixelWidth,0.008);
+    // 筆觸兩端逐漸收細，aa 依畫面像素大小柔化邊緣。
+    float taper=1.-smoothstep(0.30,1.,abs(local.x)/lengthOfMark);
+    float stroke=(1.-smoothstep(width*0.15,width+aa,across))*taper*width/(width+aa*0.5);
+    float occupancy=smoothstep(0.24,0.47,seed)*smoothstep(0.25,0.61,cluster);
+    float strength=0.40+0.60*hash13(vec3(id,167.8));
+    float light=step(0.77,hash13(vec3(id,191.5)));
+    marks+=vec2(1.-light,light)*stroke*occupancy*strength;
+  }
+  return clamp(marks,0.,1.);
+}
+void main(){
+  float distanceToEye=length(vView);
+  float t=clamp(distanceToEye/uFar,0.,1.);
+  vec3 v=normalize(vView);
+  vec2 p=vWorld.xz;
+  // 細波紋和部分倒影擾動在 70 到 290 的距離內逐步淡出。
+  float nearDetail=1.-smoothstep(70.,290.,distanceToEye);
+  // 大片淡墨濕染與細小深淺交疊，底色不依靠透明混合來提亮。
+  float wash=fbm3(vec3(p.x*0.035,uTime*0.012,p.y*0.028));
+  float pool=vnoise3(vec3(p.x*0.10+wash*1.4,p.y*0.07,uTime*0.009));
+  // 0.34 是河面底色的混合量，0.13 是雜訊帶來的色差。想多留白先試 0.34。
+  vec3 col=mix(PAPER,vec3(0.38,0.65,0.73),0.34+wash*0.13);
+  col-=vec3(0.027,0.026,0.019)*(pool-0.35);
+  // 大小不同的局部筆觸之間保留平靜水域，遠處自然淡去。
+  float cluster=vnoise3(vec3(p.x*0.065,p.y*0.052,uTime*0.008));
+  vec2 marks=waterMarks(p,uTime,cluster);
+  float broken=vnoise3(vec3(p.x*0.28,p.y*0.21,uTime*0.018));
+  float fine=vnoise3(vec3(p.x*0.43+wash*1.7,p.y*0.85-pool,uTime*0.025));
+  float dry=smoothstep(0.62,0.80,fine)*smoothstep(0.43,0.69,pool);
+  col=mix(col,vec3(0.37,0.55,0.61),(marks.x*0.17+dry*0.045)*nearDetail);
+  // 倒影在獨立貼圖上取樣，避免把真實岸邊一起扭曲。
+  vec2 uv=gl_FragCoord.xy/uResolution;
+  vec2 warp=vec2(vnoise3(vec3(p*0.075,uTime*0.016)),vnoise3(vec3(p*0.061+19.,uTime*0.013)));
+  vec2 q=p+(warp-0.5)*6.;
+  float ripple=vnoise3(vec3(q.x*0.28,q.y*0.68,uTime*0.055))*2.-1.;
+  float crossRipple=vnoise3(vec3(q.x*0.51+7.,q.y*0.33,uTime*0.041))*2.-1.;
+  vec2 offset=vec2(ripple*(0.9+nearDetail*1.8),crossRipple*0.45);
+  offset*=uReflectionTexel*(0.25+0.75*nearDetail);
+  vec2 inset=uReflectionTexel*0.5;
+  vec2 sampleUV=clamp(uv+offset,inset,vec2(1.)-inset);
+  vec2 blur=vec2(uReflectionTexel.x*(1.0+nearDetail*1.8),0.);
+  // 取中央及左右三點做橫向柔化。上面的 blur 控制取樣距離。
+  vec3 reflection=texture(uReflection,sampleUV).rgb*0.50;
+  reflection+=texture(uReflection,clamp(sampleUV+blur,inset,vec2(1.)-inset)).rgb*0.25;
+  reflection+=texture(uReflection,clamp(sampleUV-blur,inset,vec2(1.)-inset)).rgb*0.25;
+  float grazing=pow(1.-clamp(v.y,0.,1.),3.);
+  // 視線越貼近水面，倒影佔比越大。想留出平靜水面可先降低基礎權重。
+  float reflectionWeight=(0.30+0.20*grazing)*(0.94+0.06*broken);
+  vec3 paleReflection=mix(reflection*vec3(0.96,0.99,1.0),PAPER,0.10);
+  col=mix(col,paleReflection,reflectionWeight);
+  // 較細的亮波只點綴局部，避免白色條帶鋪滿水面。
+  float glint=marks.y;
+  col=mix(col,PAPER,glint*nearDetail*0.16);
+  vec3 normal=normalize(vec3(0.008*crossRipple,1.,0.014*ripple));
+  vec3 rf=reflect(-v,normal);
+  // 這是跟太陽方向走的暖色亮斑。100 越大，亮斑越集中。
+  float g=pow(max(dot(rf,uSunDir),0.),100.)*(0.32+0.68*(0.5+0.5*ripple));
+  col=mix(col,vec3(0.98,0.90,0.73),clamp(g*uSunInf*1.2,0.,0.40));
+  // 水、遠山與天空共用同一種紙上霧色。
+  // 船身邊緣的接水暗痕和碎波都畫在水面上。
+  vec2 delta=p-uBoat.xy;
+  vec2 forward=vec2(cos(uBoat.z),-sin(uBoat.z));
+  vec2 local=vec2(dot(delta,forward),dot(delta,vec2(-forward.y,forward.x)));
+  float aa=max(length(dFdx(p)),length(dFdy(p)))*0.75+0.025;
+  float hull=length(local/vec2(3.12,0.94));
+  float contact=(1.-smoothstep(0.98,1.28+aa,hull))*0.48;
+  float edge=abs(local.y)-(0.92+0.10*sin(local.x*1.5-uTime*2.1));
+  float sideWave=(1.-smoothstep(0.04,0.16+aa,abs(edge-0.23)))
+    *(1.-smoothstep(2.0,3.7,abs(local.x)));
+  float fragments=smoothstep(0.10,0.65,sin(local.x*6.3-uTime*3.4)*0.5+0.5);
+  float wake=0.,foam=0.;
+  // 尾波沿船走過的路徑散開，邊緣留有不規則缺口。
+  if(length(delta)<36.){
+    for(int i=0;i<16;i++){
+      vec4 a=uBoatTrail[i],b=uBoatTrail[i+1];
+      vec2 segment=b.xy-a.xy;
+      float along=clamp(dot(p-a.xy,segment)/max(dot(segment,segment),0.0001),0.,1.);
+      vec2 centre=mix(a.xy,b.xy,along);
+      float age=(float(i)+along)*0.55;
+      float strength=mix(a.z,b.z,along)*(1.-smoothstep(3.0,8.8,age));
+      vec2 relative=p-centre;
+      float angle=atan(relative.y,relative.x);
+      float radius=1.0+age*0.60+0.12*sin(angle*3.+age*1.7)+0.07*sin(angle*7.-age);
+      float d=length(relative);
+      float stroke=1.-smoothstep(0.06,0.19+aa,abs(d-radius));
+      float brokenWave=smoothstep(-0.25,0.65,sin(p.x*2.3+p.y*1.7-age*2.0))
+        *(0.55+0.45*sin(angle*5.+age*1.3)*sin(angle*5.+age*1.3));
+      float clearHull=smoothstep(1.05,1.48,hull);
+      wake=max(wake,stroke*strength*brokenWave*clearHull);
+      foam=max(foam,(1.-smoothstep(0.03,0.12+aa,abs(d-radius-0.22)))*strength*brokenWave*clearHull);
+    }
+  }
+  float boatDetail=1.-smoothstep(90.,240.,distanceToEye);
+  col=mix(col,vec3(0.19,0.27,0.23),clamp(contact+wake*0.25,0.,0.6)*boatDetail);
+  col=mix(col,PAPER,(foam*0.30+sideWave*fragments*(0.08+uBoat.w*0.20))*boatDetail);
+  float haze=smoothstep(0.16,0.88,t);
+  col=mix(col,HORIZON,haze*0.94);
+  float fibre=vnoise3(vec3(gl_FragCoord.xy*vec2(0.13,0.37),2.1))-0.5;
+  col+=vec3(fibre*0.007+(grain()-0.5)*0.006);
+  o=vec4(col,1.0);
+}`;
+
+// 天空：全螢幕三角形，不需要頂點資料
+const VS_SKY=`#version 300 es
+out vec2 vUV;
+void main(){
+  vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
+  vUV=p*2.0-1.0;
+  gl_Position=vec4(vUV,0.9999,1.0);
+}`;
+// 由相機方向算出每個像素對應的視線，再疊遠山、雲、霧和太陽。
+const FS_SKY=`#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform vec3 uRight, uUp, uFwd, uSunDir;
+uniform float uTanH, uAspect, uTime, uSunInf, uClouds, uMist, uSkyMirror;
+out vec4 o;
+`+GLSL_COMMON+`
+void main(){
+  vec3 ray=normalize(uFwd+vUV.x*uAspect*uTanH*uRight+vUV.y*uTanH*uUp);
+  if(uSkyMirror>0.5)ray.y=-ray.y;
+  float el=ray.y;
+  // 天幕是淡暖紙色，雲以灰青積墨與紙色留白疊成，避免塑膠藍天。
+  vec3 top=vec3(0.67,0.83,0.91);
+  vec3 col=mix(HORIZON,top,smoothstep(0.02,0.90,max(el,0.))*0.60);
+  // 遠山剪影依世界方向取樣，畫在場景模型後方。
+  float azimuth=atan(ray.x,-ray.z);
+  for(int layer=0;layer<3;layer++){
+    float f=float(layer),a=azimuth+f*1.37;
+    float ridge=0.025+(0.075+f*0.024)*(0.45+0.30*sin(a*3.1+0.4)+0.19*sin(a*7.3-f)+0.10*sin(a*13.7));
+    float brokenEdge=vnoise3(vec3(ray.xz*30.,f+3.))*0.005;
+    float silhouette=1.-smoothstep(ridge-0.006,ridge+0.009,el+brokenEdge);
+    float foot=smoothstep(-0.035,0.035,el);
+    vec3 distantInk=mix(vec3(0.77,0.87,0.90),vec3(0.55,0.74,0.82),f*0.5);
+    col=mix(col,distantInk,silhouette*foot*(0.30+f*0.06));
+  }
+  vec3 drift=vec3(uTime*0.0025,0.,uTime*0.0013);
+  // 以視線方向取樣：轉頭時雲固定在天空，無接縫，也不跟著螢幕移動。
+  vec3 cloudP=ray*vec3(3.4,8.8,3.4)+vec3(4.8,1.7,11.3)+drift;
+  float warp=vnoise3(cloudP*0.62+7.1);
+  float body=fbm3(cloudP+vec3(warp*0.9,warp*0.55,0.));
+  float ragged=vnoise3(cloudP*2.8+vec3(5.1,2.7,9.3));
+  // 大片雲形佔八成多，小尺度雜訊負責打散雲邊。
+  float field=body*0.84+ragged*0.16;
+  float skyMask=smoothstep(0.015,0.13,el);
+  float cloud=smoothstep(0.43,0.64,field)*skyMask;
+  float edge=smoothstep(0.38,0.52,field)*skyMask;
+  // 雲底稍濃，雲頂留白；邊緣用雜訊滲開，不勾硬輪廓。
+  float underside=vnoise3(cloudP*vec3(0.75,1.7,0.75)+vec3(0.,0.7,3.));
+  float opacity=clamp((edge*0.10+cloud*(0.30+underside*0.24))*uClouds,0.,0.70);
+  vec3 cloudInk=mix(vec3(0.76,0.85,0.88),vec3(0.61,0.74,0.81),underside*0.55);
+  col=mix(col,cloudInk,opacity);
+  float softCrown=smoothstep(0.54,0.72,body)*(1.-smoothstep(0.48,0.73,underside))*skyMask;
+  col=mix(col,PAPER,clamp(softCrown*uClouds*0.40,0.,0.55));
+  // 更高處的薄雲拉成斷續雲絲，與厚雲保持不同尺度。
+  float wisps=fbm3(ray*vec3(3.1,18.,3.1)+vec3(17.4,4.3,2.7)+drift*0.6);
+  float veil=smoothstep(0.50,0.70,wisps)*smoothstep(0.16,0.48,el);
+  col=mix(col,vec3(0.87,0.93,0.94),clamp(veil*uClouds*0.26,0.,0.40));
+  // 低處不規則霧帶接回遠山與河面，仍保留可呼吸的大片留白。
+  float lowNoise=vnoise3(ray*vec3(7.2,2.1,7.2)+vec3(8.,uTime*0.008,5.));
+  float fogHeight=(el-0.035-(lowNoise-0.5)*0.09)/0.105;
+  float horizonMist=exp(-fogHeight*fogHeight)*(0.22+lowNoise*0.22)*clamp(uMist,0.,1.5);
+  col=mix(col,mix(HORIZON,PAPER,0.55),clamp(horizonMist,0.,0.65));
+  float fibre=vnoise3(vec3(gl_FragCoord.xy*vec2(0.13,0.37),2.1))-0.5;
+  col+=vec3(fibre*0.007);
+  // 太陽：朱砂色的圓 + 暈染光暈
+  float sd=dot(ray,uSunDir);
+  float disc=smoothstep(0.99965,0.99985,sd);
+  float halo=pow(max(sd,0.),24.0);
+  col=mix(col,vec3(0.96,0.84,0.66),halo*0.28*(0.4+0.6*uSunInf)*(1.-opacity*0.45));
+  col=mix(col,vec3(0.84,0.50,0.39),disc*0.65*(1.-opacity*0.50));
+  col*=0.995+0.010*grain();
+  o=vec4(col,1.0);
+}`;
+
+// 瀑布獨立材質：流動水絲、落水泡沫與柔邊水霧。
+const VS_FALL=`#version 300 es
+precision highp float;
+layout(location=0)in vec3 aPos;
+layout(location=1)in vec2 aUV;
+layout(location=2)in float aKind;
+uniform mat4 uVP;
+uniform float uMirror;
+uniform vec3 uCam;
+out vec2 vUV;out float vKind;out vec3 vWorld;out vec3 vView;
+void main(){
+  vec3 w=aPos;if(uMirror>0.5)w.y=-w.y;
+  vUV=aUV;vKind=aKind;vWorld=aPos;vView=uCam-w;
+  gl_Position=uVP*vec4(w,1.);
+}`;
+const FS_FALL=`#version 300 es
+precision highp float;
+in vec2 vUV;in float vKind;in vec3 vWorld;in vec3 vView;
+uniform float uTime,uMist,uFar;
+out vec4 o;
+`+GLSL_COMMON+`
+void main(){
+  if(vWorld.y<0.01)discard;
+  vec3 col;float alpha;
+  // vKind 用來選水幕、溪段、泡沫或水霧。這一段的 speed 控制水絲往下流的速度。
+  if(vKind<1.5){
+    float speed=vKind<0.5?2.6:0.70;
+    float warp=vnoise3(vec3(vUV.x*2.4,vUV.y*7.-uTime*0.35,8.2));
+    float threads=fbm3(vec3(vUV.x*5.5+(warp-0.5)*1.2,vUV.y*(vKind<0.5?13.:18.)-uTime*speed,6.1));
+    float broken=vnoise3(vec3(vUV.x*19.+warp,vUV.y*34.-uTime*speed*2.2,2.7));
+    float edge=1.-smoothstep(0.56,1.,abs(vUV.x)+(threads-0.5)*0.20);
+    col=mix(vec3(0.67,0.77,0.72),PAPER+vec3(0.045,0.060,0.060),0.40+threads*0.60);
+    col=mix(col,vec3(0.94,0.95,0.90),smoothstep(0.60,0.80,broken)*0.14);
+    alpha=edge*(0.58+threads*0.23)*(vKind<0.5?1.:0.64);
+    // 回流溪段接近主河道時降低不透明度，讓交界逐漸淡出。
+    if(vKind>1.1)alpha*=1.-smoothstep(0.87,1.,vUV.y);
+  }else if(vKind<2.5){
+    // 落水泡沫用帶雜訊的環紋向外移動，edge 讓外圍淡出。
+    float r=length(vUV);
+    float noise=fbm3(vec3(vUV*3.,uTime*0.16));
+    float ring=pow(0.5+0.5*sin(r*16.-uTime*2.2+noise*2.),5.);
+    float edge=1.-smoothstep(0.70,1.,r+(noise-0.5)*0.12);
+    col=mix(vec3(0.69,0.79,0.74),vec3(0.94,0.95,0.90),ring*0.65+noise*0.15);
+    alpha=edge*(0.15+ring*0.30+noise*0.16);
+  }else{
+    float r=length(vUV);
+    float noise=fbm3(vec3(vUV.x*2.0,vUV.y*2.4-uTime*0.12,12.3));
+    alpha=pow(max(0.,1.-r),1.6)*(0.22+noise*0.26)*clamp(uMist,0.,1.5);
+    col=mix(HORIZON,PAPER,0.82);
+  }
+  float air=1.-exp(-pow(length(vView)/uFar,1.5)*2.1);
+  col=mix(col,PAPER,air*0.85);alpha*=1.-air*0.45;
+  col+=vec3((grain()-0.5)*0.006);
+  if(alpha<0.003)discard;
+  o=vec4(col,clamp(alpha,0.,0.86));
+}`;
+// 各材質選用頂點著色器，再搭配各自的片段著色器。
+const progFall=makeProgram(VS_FALL,FS_FALL),UF=uniformGetter(progFall);
+// 用同一份地形著色器編出兩個版本，原版不會計算新版的皴紋。
+const terrainPrograms={
+  original:makeProgram(VS_PROP,FS_TERRAIN),
+  ink:makeProgram(VS_PROP,FS_TERRAIN.replace('#version 300 es\n','#version 300 es\n#define INK_STROKES\n'))
+};
+const terrainUniforms={
+  original:uniformGetter(terrainPrograms.original),
+  ink:uniformGetter(terrainPrograms.ink)
+};
+const terrainStyleSelect=document.getElementById('terrainStyle');
+const progProp   =makeProgram(VS_PROP,FS_PROP);
+const progWater  =makeProgram(VS_PROP,FS_WATER);
+const progSky    =makeProgram(VS_SKY,FS_SKY);
+const UP=uniformGetter(progProp),
+      UW=uniformGetter(progWater),   US=uniformGetter(progSky);
+
+/* =====================================================================
+   五、網格建立
+   ===================================================================== */
+// 交錯式頂點：位置(3) + 法線(3)
+// 把頂點資料上傳給顯示卡。有索引的模型可以讓相鄰三角形共用頂點。
+function makeMesh(data,idx){
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
+  let count, idxType=0;
+  if(idx){
+    const ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+    count=idx.length;
+    idxType=(idx instanceof Uint32Array)?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT;
+  } else count=data.length/6;
+  gl.bindVertexArray(null);
+  return {vao:vao,count:count,indexed:!!idx,idxType:idxType};
+}
+// 非實例化的繪製使用 aInst 的預設值：位置 0、縮放 1
+gl.vertexAttrib4f(2,0,0,0,1);
+
+// ---- 地形 ----
+let terrainHeights;
+async function buildTerrain(){
+  const W=N+1, step=SIZE/N;
+  const hs=new Float32Array(W*W);
+  for(let j=0;j<W;j++){
+    for(let i=0;i<W;i++) hs[j*W+i]=terrainH(-HALF+i*step,-HALF+j*step);
+    if(j%24===0){statusText.textContent='正在生成山體 '+Math.round(j/N*100)+'%';await yieldUI();}
+  }
+  // 先平滑河岸的孤立尖點，再把高度用於物件落點與碰撞。
+  for(let pass=0;pass<3;pass++){
+    const previous=new Float32Array(hs);
+    for(let j=1;j<N;j++)for(let i=1;i<N;i++){
+      const x=-HALF+i*step,z=-HALF+j*step,k=j*W+i;
+      const shore=Math.abs(x-riverX(z))-riverW(z);
+      if(shore< -2||shore>24||previous[k]>25)continue;
+      let total=0,weight=0;
+      for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+        const ii=Math.max(0,Math.min(N,i+dx)),jj=Math.max(0,Math.min(N,j+dz));
+        const w=1/(1+dx*dx+dz*dz);total+=previous[jj*W+ii]*w;weight+=w;
+      }
+      const average=total/weight;
+      const relaxation=0.52*(1.-smoothstep(12.,24.,shore));
+      hs[k]=previous[k]+(average-previous[k])*relaxation;
+    }
+  }
+  // 把平滑後的高度存起來，供樹木落點和相機碰撞取樣。
+  terrainHeights=hs;
+  const v=new Float32Array(W*W*6);
+  for(let j=0;j<W;j++)for(let i=0;i<W;i++){
+    // 用左右與前後相鄰高度的差值估算頂點法線，光照與坡度著色都會用到。
+    const hL=hs[j*W+Math.max(i-1,0)], hR=hs[j*W+Math.min(i+1,N)];
+    const hD=hs[Math.max(j-1,0)*W+i], hU=hs[Math.min(j+1,N)*W+i];
+    let nx=(hL-hR)/(2*step), ny=1, nz=(hD-hU)/(2*step);
+    const l=Math.hypot(nx,ny,nz); nx/=l; ny/=l; nz/=l;
+    const o=(j*W+i)*6;
+    v[o]=-HALF+i*step; v[o+1]=hs[j*W+i]; v[o+2]=-HALF+j*step;
+    v[o+3]=nx; v[o+4]=ny; v[o+5]=nz;
+  }
+  // 每個地形方格用兩個三角形拼成，索引記錄它們共用的頂點。
+  const idx=new Uint32Array(N*N*6); let k=0;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+    const a=j*W+i, b=a+1, c=a+W, d=c+1;
+    idx[k++]=a; idx[k++]=c; idx[k++]=b;
+    idx[k++]=b; idx[k++]=c; idx[k++]=d;
+  }
+  return makeMesh(v,idx);
+}
+
+// ---- 四種枝幹與樹冠骨架：扁平針葉團、露出的側枝、偏心樹冠 ----
+// variant 選分枝變化，kind 選樹種，detail 控制模型細節量。
+function buildPine(variant,kind='pine',detail=1){
+  const out=[],bark=[];
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const unit=a=>{const n=Math.hypot(...a)||1;return a.map(v=>v/n);};
+  const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+  const random=(i,j)=>hash2(i+variant*173,j+41);
+  function tri(a,b,c,tag,normals){
+    const face=unit(cross(b.map((v,i)=>v-a[i]),c.map((v,i)=>v-a[i])));
+    for(let i=0;i<3;i++){out.push(...[a,b,c][i],...(normals?normals[i]:face));bark.push(tag);}
+  }
+  // 在樹枝控制點之間插值，讓枝條沿平滑曲線生長。
+  function spline(points,t){
+    const q=Math.min(points.length-1.000001,Math.max(0,t)*(points.length-1)),i=Math.floor(q),u=q-i;
+    const p0=points[Math.max(0,i-1)],p1=points[i],p2=points[Math.min(points.length-1,i+1)],p3=points[Math.min(points.length-1,i+2)];
+    return p1.map((v,k)=>0.5*((2*v)+(-p0[k]+p2[k])*u+(2*p0[k]-5*v+4*p2[k]-p3[k])*u*u+(-p0[k]+3*v-3*p2[k]+p3[k])*u*u*u));
+  }
+  // 沿曲線放一圈圈截面，再接成從枝根向枝梢變細的管狀網格。
+  function wood(points,r0,r1){
+    const rings=[],steps=(points.length-1)*(detail<0.7?2:3),sides=detail<0.7?5:6;
+    for(let j=0;j<=steps;j++){
+      const t=j/steps,p=spline(points,t),before=spline(points,Math.max(0,t-0.005)),after=spline(points,Math.min(1,t+0.005));
+      const axis=unit(after.map((v,i)=>v-before[i]));
+      const u=unit(cross(axis,Math.abs(axis[1])>0.94?[1,0,0]:[0,1,0])),v=cross(axis,u);
+      const radius=(r1+(r0-r1)*Math.pow(1-t,1.25))*(1+0.08*Math.sin(t*9));
+      rings.push(Array.from({length:sides},(_,k)=>{
+        const a=k/sides*Math.PI*2,n=u.map((q,i)=>q*Math.cos(a)+v[i]*Math.sin(a));
+        return {p:p.map((q,i)=>q+n[i]*radius),n};
+      }));
+    }
+    for(let j=0;j<steps;j++)for(let k=0;k<sides;k++){
+      const a=rings[j][k],b=rings[j][(k+1)%sides],c=rings[j+1][k],d=rings[j+1][(k+1)%sides];
+      tri(a.p,b.p,d.p,1,[a.n,b.n,d.n]);tri(a.p,d.p,c.p,1,[a.n,d.n,c.n]);
+    }
+  }
+  function grow(a,b,r,id,droop=0){
+    const d=b.map((v,i)=>v-a[i]),side=unit([-d[2],0,d[0]]);
+    const mid=mix(a,b,0.48).map((v,i)=>v+side[i]*(random(id,13)-0.5)*0.45);
+    mid[1]+=droop;
+    const path=[a,mid,b];wood(path,r,0.009);return path;
+  }
+  // 小葉簇各有自己的輪廓，簇與簇之間保留空隙。
+  function tuft(p,rx,ry,rz,id){
+    const needle=kind==='conifer',count=Math.max(3,Math.round((needle?15:kind==='pine'?8:7)*detail));
+    for(let j=0;j<count;j++){
+      const a=needle?Math.atan2(p[2],p[0]-lean*p[1]/height)+(random(id*23+j,29)-0.5)*1.5:j*2.39996+random(id,29)*6.28;
+      const centre=[p[0]+(random(id*23+j,31)-0.5)*rx*1.35,p[1]+(random(id*23+j,37)-0.5)*ry*1.35,p[2]+(random(id*23+j,41)-0.5)*rz*1.35];
+      const axis=unit([Math.cos(a),(needle?-0.55:-0.25)+random(id*23+j,43)*(needle?0.65:0.85),Math.sin(a)]);
+      const reference=unit([random(id*23+j,47)-0.5,0.45,random(id*23+j,49)-0.5]);
+      const side=unit(cross(axis,reference)),normal=unit(cross(side,axis));
+      const length=(rx+ry+rz)*(0.34+random(id*23+j,51)*0.23)*(detail<0.7?1.25:1),width=length*(needle?0.065:kind==='pine'?0.11:0.37);
+      const point=(t,sign)=>centre.map((v,i)=>v+axis[i]*(t-0.45)*length+side[i]*sign*width*Math.pow(Math.sin(t*Math.PI),0.80)+normal[i]*Math.sin(t*Math.PI)*length*0.09);
+      const normalAt=t=>unit(normal.map((v,i)=>v+axis[i]*(t-0.5)*0.28));
+      const base=point(0,0),l=point(0.32,-1),rr=point(0.32,1),ll=point(0.70,-1),r=point(0.70,1),tip=point(1,0);
+      tri(base,l,rr,-1,[normalAt(0),normalAt(0.32),normalAt(0.32)]);
+      tri(l,ll,r,-1,[normalAt(0.32),normalAt(0.70),normalAt(0.70)]);
+      tri(l,r,rr,-1,[normalAt(0.32),normalAt(0.70),normalAt(0.32)]);
+      tri(ll,tip,r,-1,[normalAt(0.70),normalAt(1),normalAt(0.70)]);
+    }
+  }
+  function cluster(p,rx,ry,rz,id,count=9){
+    count=Math.max(3,Math.round(count*detail));
+    for(let j=0;j<count;j++){
+      const a=j*2.39996+random(id,53)*6.28,r=Math.sqrt((j+0.7)/count);
+      const y=(random(id*17+j,59)-0.5)*ry*1.5;
+      const centre=[p[0]+Math.cos(a)*rx*r,p[1]+y,p[2]+Math.sin(a)*rz*r];
+      const size=0.26+random(id*17+j,61)*0.24;
+      tuft(centre,size*(0.8+rx*0.32),size*(0.85+ry*0.35),size*(0.8+rz*0.32),id*19+j);
+    }
+  }
+  const height={pine:8.2,conifer:9.8,broadleaf:6.4,poplar:9.1,shrub:1.5,blossom:5.6}[kind];
+  const lean=(random(3,73)-0.5)*(kind==='pine'?2.8:1.6),bend=(random(5,79)-0.5)*1.1;
+  const stemPoints=[[0,-0.60,0],[lean*0.1,height*0.22,0.08],[lean*0.55,height*0.49,bend],[lean*0.78,height*0.76,bend*0.55],[lean,height,0.16]];
+  const stem=t=>spline(stemPoints,t);
+  wood(stemPoints,kind==='shrub'?0.085:kind==='poplar'?0.15:0.26,0.014);
+  if(kind==='conifer'){
+    // 下垂的枝葉分束生成，枝束之間保留空隙。
+    for(let i=0;i<31;i++){
+      if(i%7===variant%7||random(i,83)<0.10)continue;
+      const t=0.16+i/31*0.78+(random(i,81)-0.5)*0.025,root=stem(t),a=i*2.39996+variant*0.73+(random(i,89)-0.5)*0.8;
+      const reach=(2.6*(1-t)+0.28)*(0.70+random(i,97)*0.58);
+      const tip=[root[0]+Math.cos(a)*reach,root[1]-0.32+(t>0.75?0.55:0),root[2]+Math.sin(a)*reach];
+      const path=grow(root,tip,0.075*(1-t)+0.015,i,-0.25);
+      for(let j=0;j<5;j++){
+        const f=0.18+j*0.19,p=spline(path,f),spread=(1-f)*0.48;
+        p[0]+=Math.sin(a)*(j%2?1:-1)*spread;p[2]-=Math.cos(a)*(j%2?1:-1)*spread;
+        tuft(p,0.27+reach*0.11,0.29+random(i*7+j,101)*0.18,0.26+reach*0.10,i*7+j);
+      }
+    }
+    cluster(stem(0.94),0.25,0.40,0.25,117,5);
+  }else if(kind==='broadleaf'){
+    for(let i=0;i<10;i++){
+      const t=0.30+i*0.055,root=stem(t),a=i*2.39996+variant*1.4;
+      const reach=1.15+random(i,131)*1.65;
+      const tip=[root[0]+Math.cos(a)*reach,root[1]+0.65+random(i,137)*0.60,root[2]+Math.sin(a)*reach];
+      const path=grow(root,tip,0.105*(1-t)+0.03,i,0.18);
+      cluster(spline(path,0.75),0.72,0.58,0.72,i+351,8);
+      for(let j=0;j<2;j++){
+        const forkRoot=spline(path,0.62+j*0.16),fa=a+(j?0.50:-0.60);
+        const end=[tip[0]+Math.cos(fa)*0.48,tip[1]+0.25+j*0.30,tip[2]+Math.sin(fa)*0.48];
+        grow(forkRoot,end,0.028,i*3+j,0.1);
+        cluster(end,0.62+random(i,139)*0.25,0.48,0.68,i*3+j,7);
+      }
+    }
+    cluster(stem(0.99),0.72,0.45,0.72,173,8);
+  }else if(kind==='pine'){
+    for(let i=0;i<7;i++){
+      const t=0.27+i*0.085,root=stem(t),a=i*2.43+variant*0.9,reach=1.5+random(i,151)*1.35;
+      const tip=[root[0]+Math.cos(a)*reach+0.35,root[1]+0.28+random(i,157)*0.55,root[2]+Math.sin(a)*reach];
+      const path=grow(root,tip,0.11*(1-t)+0.025,i,-0.2);
+      const fork=spline(path,0.66),end=[tip[0]+Math.cos(a+0.6)*0.45,tip[1]+0.35,tip[2]+Math.sin(a+0.6)*0.5];
+      grow(fork,end,0.03,i+33,0.10);
+      cluster(tip,1.05,0.50+random(i,163)*0.20,0.90,i+180,11);
+      cluster(end,0.50,0.35,0.52,i+210,5);
+    }
+    cluster(stem(0.98),0.75,0.48,0.65,239,9);
+  }else if(kind==='poplar'){
+    for(let i=0;i<12;i++){
+      const t=0.28+i*0.051,root=stem(t),a=i*2.39996+variant;
+      const reach=0.38+random(i,181)*0.57;
+      const tip=[root[0]+Math.cos(a)*reach,root[1]+0.8,root[2]+Math.sin(a)*reach];
+      grow(root,tip,0.045,i,0.15);cluster(tip,0.45,0.70,0.43,i+251,6);
+    }
+    cluster(stem(0.97),0.32,0.48,0.30,279,5);
+  }else if(kind==='shrub'){
+    for(let i=0;i<5;i++){
+      const a=i*2.4,r=0.35+random(i,191)*0.55,tip=[Math.cos(a)*r,0.65+random(i,193)*0.8,Math.sin(a)*r];
+      grow(stem(0.13),tip,0.045,i,0.13);cluster(tip,0.52,0.34,0.47,i+291,7);
+    }
+  }else if(kind==='blossom'){
+    for(let i=0;i<9;i++){
+      const root=stem(0.30+i*0.06),a=i*2.39996+variant,reach=1.25+random(i,211)*1.5;
+      const tip=[root[0]+Math.cos(a)*reach,root[1]+0.8,root[2]+Math.sin(a)*reach];
+      const path=grow(root,tip,0.075,i,0.2);
+      for(let j=0;j<20;j++){
+        const p=spline(path,0.48+random(i*23+j,217)*0.60);
+        p[0]+=(random(i*23+j,223)-0.5)*0.8;p[1]+=(random(i*23+j,227)-0.4)*0.7;p[2]+=(random(i*23+j,229)-0.5)*0.8;
+        if(j%5===0)tuft(p,0.12,0.10,0.13,i*23+j);
+        const n=unit([random(i*23+j,233)-0.5,0.4,random(i*23+j,239)-0.5]),u=unit(cross(n,[1,0,0])),v=cross(n,u);
+        const size=0.10+random(i*23+j,241)*0.065;
+        for(let k=0;k<5;k++){
+          const angle=k/5*Math.PI*2;
+          const petal=(a,r)=>p.map((q,l)=>q+size*r*(u[l]*Math.cos(a)+v[l]*Math.sin(a)));
+          const a=petal(angle-0.30,0.7),b=petal(angle,1.3),c=petal(angle+0.30,0.7);
+          tri(p,a,b,0);tri(p,b,c,0);
+        }
+      }
+    }
+  }
+  const mesh=makeMesh(new Float32Array(out),null);
+  gl.bindVertexArray(mesh.vao);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(bark),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,1,gl.FLOAT,false,0,0);gl.bindVertexArray(null);
+  return mesh;
+}
+
+function buildSphere(la,lo){
+  const d=[];
+  for(let i=0;i<=la;i++){
+    const th=i/la*Math.PI;
+    for(let j=0;j<=lo;j++){
+      const ph=j/lo*2*Math.PI;
+      const x=Math.sin(th)*Math.cos(ph), y=Math.cos(th), z=Math.sin(th)*Math.sin(ph);
+      d.push(x,y,z,x,y,z);
+    }
+  }
+  const idx=[];
+  for(let i=0;i<la;i++)for(let j=0;j<lo;j++){
+    const a=i*(lo+1)+j, b=a+lo+1;
+    idx.push(a,b,a+1,b,b+1,a+1);
+  }
+  return makeMesh(new Float32Array(d),new Uint16Array(idx));
+}
+function buildBox(){
+  const f=[
+    [[0,0,1],[[-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5]]],
+    [[0,0,-1],[[.5,-.5,-.5],[-.5,-.5,-.5],[-.5,.5,-.5],[.5,.5,-.5]]],
+    [[1,0,0],[[.5,-.5,.5],[.5,-.5,-.5],[.5,.5,-.5],[.5,.5,.5]]],
+    [[-1,0,0],[[-.5,-.5,-.5],[-.5,-.5,.5],[-.5,.5,.5],[-.5,.5,-.5]]],
+    [[0,1,0],[[-.5,.5,.5],[.5,.5,.5],[.5,.5,-.5],[-.5,.5,-.5]]],
+    [[0,-1,0],[[-.5,-.5,-.5],[.5,-.5,-.5],[.5,-.5,.5],[-.5,-.5,.5]]]
+  ];
+  const d=[];
+  for(const face of f){
+    const n=face[0], c=face[1];
+    for(const k of [0,1,2,0,2,3]) d.push(c[k][0],c[k][1],c[k][2],n[0],n[1],n[2]);
+  }
+  return makeMesh(new Float32Array(d),null);
+}
+// 飛鳥採用身體、內翼與外翼；翼尖後掠，避免三角紙片輪廓。
+function buildBirdPart(part){
+  const out=[];
+  function tri(a,b,c,hint=[0,1,0]){
+    const u=b.map((v,i)=>v-a[i]),v=c.map((n,i)=>n-a[i]);
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const length=Math.hypot(...n)||1;n=n.map(q=>q/length);
+    if(n.reduce((sum,q,i)=>sum+q*hint[i],0)<0)n=n.map(q=>-q);
+    for(const p of [a,b,c])out.push(...p,...n);
+  }
+  function membrane(points){
+    const center=points.reduce((sum,p)=>sum.map((v,i)=>v+p[i]/points.length),[0,0,0]);
+    for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];
+      tri(center,a,b);
+      tri(center.map((v,j)=>v-(j===1?0.025:0)),b.map((v,j)=>v-(j===1?0.025:0)),a.map((v,j)=>v-(j===1?0.025:0)),[0,-1,0]);
+    }
+  }
+  function ellipsoid(cx,cy,cz,rx,ry,rz){
+    const point=(j,k)=>{const th=j/5*Math.PI,ph=k/8*Math.PI*2;return [cx+Math.cos(th)*rx,cy+Math.sin(th)*Math.cos(ph)*ry,cz+Math.sin(th)*Math.sin(ph)*rz];};
+    for(let j=0;j<5;j++)for(let k=0;k<8;k++){
+      const a=point(j,k),b=point(j+1,k),c=point(j,k+1),d=point(j+1,k+1);
+      if(j>0)tri(a,b,c,a.map((v,i)=>v-[cx,cy,cz][i]));
+      if(j<4)tri(c,b,d,d.map((v,i)=>v-[cx,cy,cz][i]));
+    }
+  }
+  if(part==='body'){
+    ellipsoid(0,0,0,0.64,0.15,0.15);
+    ellipsoid(0.53,0.07,0,0.24,0.12,0.10);
+    tri([0.70,0.06,-0.05],[0.95,0.035,0],[0.70,0.06,0.05]);
+    tri([0.70,-0.015,-0.05],[0.95,0.035,0],[0.70,-0.015,0.05],[0,-1,0]);
+    membrane([[-0.42,0.01,-0.11],[-0.95,0.015,-0.28],[-0.82,0.02,0],[-0.95,0.015,0.28],[-0.42,0.01,0.11]]);
+  }else if(part==='inner'){
+    membrane([[0.26,0.02,0.05],[0.26,0.08,0.48],[0.07,0.10,1.15],[-0.55,0.10,1.15],[-0.42,0.04,0.55],[-0.27,0.0,0.06]]);
+  }else{
+    membrane([[0,0,0],[-0.02,0.035,0.40],[-0.30,0.025,0.85],[-0.62,-0.02,1.20],[-0.73,-0.02,0.95],[-0.67,-0.01,0.84],[-0.80,0.0,0.70],[-0.65,0.01,0.34],[-0.62,0,0]]);
+  }
+  return makeMesh(new Float32Array(out),null);
+}
+// 岸邊小物：不規則碎岩、彎曲低草與帶穗蘆葦。
+function buildShorePart(kind,variant){
+  const out=[],tags=[];
+  const random=(i,j)=>hash2(i+variant*137,j+317);
+  function tri(a,b,c,tag=0,hint){
+    const u=b.map((v,i)=>v-a[i]),v=c.map((q,i)=>q-a[i]);
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const length=Math.hypot(...n);if(length<1e-8)return;n=n.map(q=>q/length);
+    if(hint&&n.reduce((sum,q,i)=>sum+q*hint[i],0)<0)n=n.map(q=>-q);
+    for(const p of [a,b,c]){out.push(...p,...n);tags.push(tag===-1?(p[1]<0.20?1:0):tag);}
+  }
+  // 在橢球外形上擾動頂點半徑，做出不規則的碎岩。
+  function stone(cx,cy,cz,rx,ry,rz,seed,tag=-1){
+    const point=(j,k)=>{
+      const th=j/4*Math.PI,ph=k/7*Math.PI*2;
+      const r=0.83+random(k%7+seed,j+37)*0.30;
+      return [cx+Math.sin(th)*Math.cos(ph)*rx*r,cy+Math.cos(th)*ry*r,cz+Math.sin(th)*Math.sin(ph)*rz*r];
+    };
+    for(let j=0;j<4;j++)for(let k=0;k<7;k++){
+      const a=point(j,k),b=point(j+1,k),c=point(j,k+1),d=point(j+1,k+1);
+      const hint=p=>p.map((v,i)=>v-[cx,cy,cz][i]);
+      if(j>0)tri(a,c,b,tag,hint(a));if(j<3)tri(c,d,b,tag,hint(d));
+    }
+  }
+  // 草葉從根部起彎並向葉尖收窄。bend 越大，彎曲越明顯。
+  function blade(x,z,angle,height,width,bend,tag=0){
+    const side=[Math.cos(angle),Math.sin(angle)],forward=[-side[1],side[0]];
+    const point=(t,s)=>[x+forward[0]*bend*t*t+side[0]*width*(1.-t)*s,
+      -0.22+height*t,z+forward[1]*bend*t*t+side[1]*width*(1.-t)*s];
+    for(let j=0;j<3;j++){
+      const a=point(j/3,-1),b=point(j/3,1),c=point((j+1)/3,-1),d=point((j+1)/3,1);
+      tri(a,b,d,tag);tri(a,d,c,tag);
+    }
+    return point(1,0);
+  }
+  if(kind==='rock'){
+    stone(0,0.16,0,1.25,0.86,0.94,11);
+    if(variant===2)stone(0.85,-0.06,0.48,0.64,0.45,0.55,23);
+  }else if(kind==='grass'){
+    for(let i=0;i<9;i++){
+      const angle=random(i,3)*Math.PI*2,r=random(i,5)*0.42;
+      blade(Math.cos(angle)*r,Math.sin(angle)*r,angle,0.45+random(i,7)*0.65,0.035+random(i,9)*0.035,0.22+random(i,11)*0.45);
+    }
+  }else{
+    for(let i=0;i<6;i++){
+      const angle=random(i,31)*Math.PI*2,r=random(i,33)*0.40;
+      const x=Math.cos(angle)*r,z=Math.sin(angle)*r,height=1.65+random(i,37)*0.90;
+      const tip=blade(x,z,angle,height,0.017,0.12+random(i,41)*0.15);
+      blade(x,z,angle+0.6,height*0.64,0.042,0.45);
+      stone(tip[0],tip[1]-0.10,tip[2],0.034,0.15,0.034,i+53,1);
+    }
+  }
+  const mesh=makeMesh(new Float32Array(out),null);
+  gl.bindVertexArray(mesh.vao);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(tags),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,1,gl.FLOAT,false,0,0);gl.bindVertexArray(null);
+  return mesh;
+}
+// 大水面（y = 0）
+// 河面網格固定在 y = 0，水波和流動由水面著色器繪製。
+function buildWater(){
+  const R=1500;
+  const d=[-R,0,-R,0,1,0,  -R,0,R,0,1,0,  R,0,R,0,1,0,
+           -R,0,-R,0,1,0,   R,0,R,0,1,0,  R,0,-R,0,1,0];
+  return makeMesh(new Float32Array(d),null);
+}
+
+const meshTerrain=await buildTerrain();
+const FOREST_SPECIES=[
+  {kind:'pine',color:[0.13,0.29,0.24],bark:[0.26,0.23,0.16]},
+  {kind:'conifer',color:[0.11,0.25,0.25],bark:[0.28,0.25,0.18]},
+  {kind:'broadleaf',color:[0.38,0.55,0.28],bark:[0.34,0.29,0.20]},
+  {kind:'poplar',color:[0.58,0.66,0.35],bark:[0.52,0.49,0.36]},
+  {kind:'shrub',color:[0.39,0.52,0.23],bark:[0.34,0.29,0.18]}
+];
+// 每種樹先做幾個模型變體，之後由不同位置的樹共用。
+const forestModels=FOREST_SPECIES.flatMap(species=>Array.from({length:species.kind==='conifer'?4:species.kind==='shrub'?2:3},(_,variant)=>({
+  ...species,variant,mesh:buildPine(variant,species.kind)
+})));
+// 木船使用中空船身，兩端翹起，船舷較厚，船底內凹。
+function buildBoatHull(){
+  const parts={shell:[],rim:[],inside:[]};
+  function tri(part,a,b,c,hint){
+    const u=b.map((v,i)=>v-a[i]),v=c.map((q,i)=>q-a[i]);
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const length=Math.hypot(...n);if(length<1e-8)return;
+    n=n.map(q=>q/length);
+    if(n.reduce((sum,q,i)=>sum+q*hint[i],0)<0){[b,c]=[c,b];n=n.map(q=>-q);}
+    for(const p of [a,b,c])parts[part].push(...p,...n);
+  }
+  function quad(part,a,b,c,d,hint){tri(part,a,b,c,hint);tri(part,a,c,d,hint);}
+  const sections=24, rows=[];
+  for(let i=0;i<=sections;i++){
+    const t=-1+2*i/sections,x=t*3.2;
+    const width=0.035+0.965*Math.pow(Math.max(0,1-t*t),0.62);
+    const rise=Math.pow(Math.abs(t),3.5)*(t>0?0.46:0.29);
+    rows.push({x,width,top:0.45+rise,bottom:-0.30+rise*0.85});
+  }
+  for(let i=0;i<sections;i++){
+    const a=rows[i],b=rows[i+1];
+    for(const side of [-1,1]){
+      const outer=(r,level)=>[r.x,level?r.top:r.bottom,side*r.width*(level?1:0.48)];
+      const inner=r=>[r.x,r.top-0.045,side*Math.max(0.012,r.width-0.095)];
+      const floor=r=>[r.x,0.04+(r.top-0.45)*0.85,side*r.width*0.49];
+      quad('shell',outer(a,0),outer(b,0),outer(b,1),outer(a,1),[0,0,side]);
+      quad('rim',outer(a,1),outer(b,1),inner(b),inner(a),[0,1,0]);
+      quad('inside',inner(a),inner(b),floor(b),floor(a),[0,0,-side]);
+      quad('shell',[a.x,a.bottom,0],[b.x,b.bottom,0],outer(b,0),outer(a,0),[0,-1,0]);
+    }
+    quad('inside',[a.x,0.04+(a.top-0.45)*0.85,-a.width*0.49],
+      [b.x,0.04+(b.top-0.45)*0.85,-b.width*0.49],
+      [b.x,0.04+(b.top-0.45)*0.85,b.width*0.49],
+      [a.x,0.04+(a.top-0.45)*0.85,a.width*0.49],[0,1,0]);
+  }
+  for(const r of [rows[0],rows[sections]]){
+    quad('shell',[r.x,r.bottom,-r.width*0.48],[r.x,r.bottom,r.width*0.48],
+      [r.x,r.top,r.width],[r.x,r.top,-r.width],[Math.sign(r.x),0,0]);
+  }
+  return Object.fromEntries(Object.entries(parts).map(([key,data])=>[key,makeMesh(new Float32Array(data),null)]));
+}
+const boatHull=buildBoatHull();
+// 弧形編織船篷前後開口，竹肋從篷內可見。
+function buildBoatCanopy(){
+  const parts={cloth:[],panels:[],lining:[],frame:[],cabin:[]};
+  function tri(part,a,b,c,hint){
+    const u=b.map((v,i)=>v-a[i]),v=c.map((q,i)=>q-a[i]);
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const length=Math.hypot(...n);if(length<1e-8)return;
+    n=n.map(q=>q/length);
+    if(n.reduce((sum,q,i)=>sum+q*hint[i],0)<0){[b,c]=[c,b];n=n.map(q=>-q);}
+    for(const p of [a,b,c])parts[part].push(...p,...n);
+  }
+  function quad(part,a,b,c,d,hint){tri(part,a,b,c,hint);tri(part,a,c,d,hint);}
+  const point=(x,t,inset=0)=>[x,0.72+(0.95-inset)*Math.sin(t),(0.82-inset)*Math.cos(t)];
+  const front=0.58,back=-1.95,steps=24;
+  for(let i=0;i<steps;i++){
+    const a=i/steps*Math.PI,b=(i+1)/steps*Math.PI;
+    const hint=[0,Math.sin((a+b)/2),Math.cos((a+b)/2)];
+    quad(Math.floor(i/3)%2?'panels':'cloth',point(back,a),point(front,a),point(front,b),point(back,b),hint);
+    quad('lining',point(back,a,0.035),point(front,a,0.035),point(front,b,0.035),point(back,b,0.035),hint.map(v=>-v));
+    for(const x of [back,front])quad('frame',point(x,a),point(x,b),point(x,b,0.035),point(x,a,0.035),[Math.sign(x+0.6),0,0]);
+  }
+  function beam(a,b,r){
+    const d=b.map((v,i)=>v-a[i]),len=Math.hypot(...d),axis=d.map(v=>v/len);
+    const reference=Math.abs(axis[1])>0.9?[1,0,0]:[0,1,0];
+    let u=[axis[1]*reference[2]-axis[2]*reference[1],axis[2]*reference[0]-axis[0]*reference[2],axis[0]*reference[1]-axis[1]*reference[0]];
+    const ul=Math.hypot(...u);u=u.map(v=>v/ul);
+    const v=[axis[1]*u[2]-axis[2]*u[1],axis[2]*u[0]-axis[0]*u[2],axis[0]*u[1]-axis[1]*u[0]];
+    const ring=(p,t)=>p.map((q,i)=>q+r*(Math.cos(t)*u[i]+Math.sin(t)*v[i]));
+    for(let k=0;k<6;k++){
+      const t=k/6*Math.PI*2,nt=(k+1)/6*Math.PI*2;
+      quad('frame',ring(a,t),ring(b,t),ring(b,nt),ring(a,nt),u.map((q,i)=>q*Math.cos((t+nt)/2)+v[i]*Math.sin((t+nt)/2)));
+    }
+  }
+  for(const x of [back,-1.32,-0.68,-0.04,front]){
+    for(let i=0;i<steps;i++)beam(point(x,i/steps*Math.PI,-0.012),point(x,(i+1)/steps*Math.PI,-0.012),0.022);
+    for(const side of [-1,1])beam([x,0.28,side*0.80],[x,0.72,side*0.82],0.028);
+  }
+  for(const side of [-1,1]){
+    beam([back,0.72,side*0.82],[front,0.72,side*0.82],0.028);
+    // 側板做低一些，篷邊下方就能留出長開口。
+    quad('cabin',[back,0.28,side*0.69],[front,0.28,side*0.69],
+      [front,0.52,side*0.76],[back,0.52,side*0.76],[0,0,side]);
+  }
+  return Object.fromEntries(Object.entries(parts).map(([key,data])=>[key,makeMesh(new Float32Array(data),null)]));
+}
+const boatCanopy=buildBoatCanopy();
+const meshSphere=buildSphere(10,16);
+const meshBox=buildBox();
+function buildFisherHat(){
+  const out=[],segments=24;
+  const tip=[0,0.19,0],centre=[0,-0.025,0];
+  for(let i=0;i<segments;i++){
+    const a=i/segments*Math.PI*2,b=(i+1)/segments*Math.PI*2;
+    const p=[Math.cos(a)*0.43,0,Math.sin(a)*0.43],q=[Math.cos(b)*0.43,0,Math.sin(b)*0.43];
+    const mid=(a+b)*0.5,normal=[Math.cos(mid)*0.4,0.91,Math.sin(mid)*0.4];
+    for(const v of [tip,q,p])out.push(...v,...normal);
+    for(const v of [centre,p,q])out.push(...v,0,-1,0);
+  }
+  return makeMesh(new Float32Array(out),null);
+}
+const fisherHat=buildFisherHat();
+const birdMeshes={body:buildBirdPart('body'),inner:buildBirdPart('inner'),outer:buildBirdPart('outer')};
+const meshWater=buildWater();
+const emptyVAO=gl.createVertexArray();
+
+// 依照實際網格的三角形插值，供樹木落點與相機碰撞共用。
+function surfaceH(x,z){
+  const step=SIZE/N,W=N+1;
+  const gx=Math.max(0,Math.min(N,(x+HALF)/step)),gz=Math.max(0,Math.min(N,(z+HALF)/step));
+  const i=Math.min(N-1,Math.floor(gx)),j=Math.min(N-1,Math.floor(gz));
+  const fx=gx-i,fz=gz-j,a=terrainHeights[j*W+i],b=terrainHeights[j*W+i+1];
+  const c=terrainHeights[(j+1)*W+i],d=terrainHeights[(j+1)*W+i+1];
+  return fx+fz<=1 ? a+(b-a)*fx+(c-a)*fz : d+(c-d)*(1-fx)+(b-d)*(1-fz);
+}
+
+// 遠處的石拱橋：依兩岸實際高度落腳，中央留出通水拱洞。
+function buildStoneBridge(){
+  const z=-24,x=riverX(z),span=riverW(z)+11,depth=4.6;
+  const base=Math.max(surfaceH(x-span,z),surfaceH(x+span,z))+0.35;
+  const rise=5.2,thickness=1.05,out=[];
+  const deck=t=>base+rise*(1.-t*t);
+  function tri(a,b,c,hint){
+    const u=b.map((v,i)=>v-a[i]),v=c.map((n,i)=>n-a[i]);
+    let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const length=Math.hypot(...n)||1;n=n.map(q=>q/length);
+    if(n.reduce((s,q,i)=>s+q*hint[i],0)<0)n=n.map(q=>-q);
+    for(const p of [a,b,c])out.push(...p,...n);
+  }
+  const quad=(a,b,c,d,hint)=>{tri(a,b,c,hint);tri(a,c,d,hint);};
+  function box(cx,cy,cz,sx,sy,sz){
+    const p=(i,j,k)=>[cx+i*sx/2,cy+j*sy/2,cz+k*sz/2];
+    quad(p(-1,-1,1),p(1,-1,1),p(1,1,1),p(-1,1,1),[0,0,1]);
+    quad(p(-1,-1,-1),p(1,-1,-1),p(1,1,-1),p(-1,1,-1),[0,0,-1]);
+    quad(p(-1,1,-1),p(1,1,-1),p(1,1,1),p(-1,1,1),[0,1,0]);
+    quad(p(-1,-1,-1),p(1,-1,-1),p(1,-1,1),p(-1,-1,1),[0,-1,0]);
+    quad(p(1,-1,-1),p(1,1,-1),p(1,1,1),p(1,-1,1),[1,0,0]);
+    quad(p(-1,-1,-1),p(-1,1,-1),p(-1,1,1),p(-1,-1,1),[-1,0,0]);
+  }
+  const segments=36;
+  for(let i=0;i<segments;i++){
+    const a=-1+i/segments*2,b=-1+(i+1)/segments*2;
+    const xa=x+a*span,xb=x+b*span,ya=deck(a),yb=deck(b);
+    quad([xa,ya,z-depth/2],[xb,yb,z-depth/2],[xb,yb,z+depth/2],[xa,ya,z+depth/2],[0,1,0]);
+    quad([xa,ya-thickness,z-depth/2],[xb,yb-thickness,z-depth/2],[xb,yb-thickness,z+depth/2],[xa,ya-thickness,z+depth/2],[0,-1,0]);
+    for(const side of [-1,1]){
+      const edge=z+side*depth/2,inner=edge-side*0.34;
+      quad([xa,ya-thickness,edge],[xb,yb-thickness,edge],[xb,yb+0.68,edge],[xa,ya+0.68,edge],[0,0,side]);
+      quad([xa,ya,inner],[xb,yb,inner],[xb,yb+0.68,inner],[xa,ya+0.68,inner],[0,0,-side]);
+      quad([xa,ya+0.68,edge],[xb,yb+0.68,edge],[xb,yb+0.68,inner],[xa,ya+0.68,inner],[0,1,0]);
+    }
+  }
+  for(const side of [-1,1]){
+    const cx=x+side*span,ground=surfaceH(cx,z)-0.5;
+    box(cx,(base+ground)/2,z,3.2,Math.max(0.8,base-ground),depth+1.0);
+  }
+  for(let i=0;i<=6;i++){
+    const t=-1+i/3;
+    for(const side of [-1,1])box(x+t*span,deck(t)+0.53,z+side*(depth/2-0.13),0.52,1.06,0.52);
+  }
+  return {mesh:makeMesh(new Float32Array(out),null),x,z,span};
+}
+const stoneBridge=buildStoneBridge();
+
+// ---- 松樹的位置：隨機撒點，只留在平緩的山坡 / 河岸，並集結成一叢一叢 ----
+// 固定種子讓森林每次載入都長在同一批位置，方便拍攝改版對照。
+let seed=12345;
+function rnd(){
+  seed=(seed+0x6D2B79F5)|0;
+  let t=Math.imul(seed^(seed>>>15),1|seed);
+  t=(t+Math.imul(t^(t>>>7),61|t))^t;
+  return ((t^(t>>>14))>>>0)/4294967296;
+}
+// 第一輪主林的棵數上限，後面還會加樹叢。
+const TREE_MAX=620;
+const pineGroups=forestModels.map(model=>({...model,positions:[],styles:[],count:0}));
+const treeCells=new Map(),cellSize=5.0;
+let maxCrownRadius=0;
+let treeCount=0;
+statusText.textContent='正在配置混合林與河岸灌叢…';await yieldUI();
+for(let k=0;k<30000&&treeCount<TREE_MAX;k++){
+  if(k%1500===0)await yieldUI();
+  const x=(rnd()*2-1)*HALF*0.85,z=(rnd()*2-1)*HALF*0.85;
+  const h=surfaceH(x,z),shore=Math.abs(x-riverX(z))-riverW(z);
+  if(h<2.5||h>88||shore<5)continue;
+  if(Math.abs(z-stoneBridge.z)<7&&Math.abs(x-stoneBridge.x)<stoneBridge.span+5)continue;
+  const hx=surfaceH(x+1,z)-surfaceH(x-1,z),hz=surfaceH(x,z+1)-surfaceH(x,z-1);
+  const slope=Math.hypot(hx,hz)/2;
+  // 第一輪先排除太陡的落點，再用低頻雜訊讓樹聚成林。
+  if(slope>0.64)continue;
+  const cl=fbm(x*0.018+40,z*0.018-17);
+  if(rnd()>smoothstep(0.37,0.65,cl)*0.80)continue;
+  const roll=rnd(),grove=fbm(x*0.009+13,z*0.009-8,3);
+  let kind;
+  if(h>55||slope>0.40)kind=roll<0.55?'conifer':roll<0.88?'pine':'shrub';
+  else if(shore<22)kind=roll<0.22?'conifer':roll<0.42?'poplar':roll<0.72?'broadleaf':roll<0.90?'shrub':'pine';
+  else if(grove>0.53)kind=roll<0.58?'conifer':roll<0.78?'pine':roll<0.90?'broadleaf':'shrub';
+  else kind=roll<0.38?'broadleaf':roll<0.60?'pine':roll<0.76?'poplar':roll<0.88?'conifer':'shrub';
+  // 先保留少量大樹的位置，再混入幼樹與成樹，避免大樹被後續密植擠掉。
+  const age=k<140?0.95:rnd();
+  let scale;
+  if(kind==='shrub') scale=0.45+rnd()*1.25;
+  else{
+    scale=age<0.34?0.30+rnd()*0.42:age<0.82?0.82+rnd()*0.62:1.70+rnd()*0.95;
+    scale*=1.-0.16*smoothstep(40,88,h);
+  }
+  const width=0.70+rnd()*0.52;
+  // 用實際樹種冠幅與縮放決定空間，讓大樹有伸展位置。
+  const crownRadius={pine:4.4,conifer:2.5,broadleaf:3.8,poplar:1.6,shrub:1.7}[kind];
+  const clearance=crownRadius*scale*width,gx=Math.floor(x/cellSize),gz=Math.floor(z/cellSize);
+  const searchCells=Math.ceil((clearance+maxCrownRadius)/cellSize);
+  if(Math.abs(z-stoneBridge.z)<4+clearance*0.65&&Math.abs(x-stoneBridge.x)<stoneBridge.span+clearance)continue;
+  let occupied=false;
+  for(let iz=-searchCells;iz<=searchCells&&!occupied;iz++)for(let ix=-searchCells;ix<=searchCells&&!occupied;ix++){
+    for(const p of treeCells.get((gx+ix)+','+(gz+iz))||[]){
+      if(Math.hypot(x-p.x,z-p.z)<((kind==='shrub'||p.kind==='shrub')?1.0+0.35*Math.min(clearance,p.clearance):Math.max(2.3,(clearance+p.clearance)*0.70))){occupied=true;break;}
+    }
+  }
+  if(occupied)continue;
+  const candidates=pineGroups.filter(group=>group.kind===kind);
+  const group=candidates[Math.floor(rnd()*candidates.length)];
+  group.positions.push(x,h-0.12,z,scale);
+  group.styles.push(rnd()*Math.PI*2,width,0.86+rnd()*0.18);
+  group.count++;treeCount++;maxCrownRadius=Math.max(maxCrownRadius,clearance);
+  const key=gx+','+gz;
+  if(!treeCells.has(key))treeCells.set(key,[]);
+  treeCells.get(key).push({x,z,clearance,kind});
+}
+// 用獨立種子在原有樹木周圍補上彼此交疊的小樹叢。
+// 以原有大樹為基礎配置，樹叢間保留空地。
+const groveAnchors=pineGroups.filter(g=>g.kind!=='shrub').flatMap(g=>
+  Array.from({length:g.count},(_,i)=>({kind:g.kind,p:g.positions.slice(i*4,i*4+4)}))
+).filter(a=>a.p[3]>0.7&&a.p[1]<48&&Math.abs(a.p[0]-riverX(a.p[2]))<riverW(a.p[2])+58);
+let groveSeed=91837,groveAdded=0;
+const groveRandom=()=>{groveSeed=(Math.imul(groveSeed,1664525)+1013904223)>>>0;return groveSeed/4294967296;};
+for(const anchor of groveAnchors){
+  if(groveAdded>=360)break;
+  if(hash2(Math.round(anchor.p[0]*3),Math.round(anchor.p[2]*3)+719)<0.24)continue;
+  const wanted=3+Math.floor(groveRandom()*3);let planted=0;
+  for(let attempt=0;attempt<16&&planted<wanted&&groveAdded<360;attempt++){
+    const angle=groveRandom()*Math.PI*2,radius=2.3+Math.pow(groveRandom(),0.75)*5.0;
+    const x=anchor.p[0]+Math.cos(angle)*radius,z=anchor.p[2]+Math.sin(angle)*radius;
+    const h=surfaceH(x,z),shore=Math.abs(x-riverX(z))-riverW(z);
+    if(h<2.2||h>58||shore<3.8||Math.abs(x)>HALF*0.86||Math.abs(z)>HALF*0.86)continue;
+    if(Math.abs(z-stoneBridge.z)<9&&Math.abs(x-stoneBridge.x)<stoneBridge.span+5)continue;
+    const slope=Math.hypot(surfaceH(x+0.7,z)-surfaceH(x-0.7,z),surfaceH(x,z+0.7)-surfaceH(x,z-0.7))/1.4;
+    if(slope>0.78)continue;
+    const roll=groveRandom(),kind=roll<0.60?anchor.kind:roll<0.82?'broadleaf':'shrub';
+    const scale=kind==='shrub'?0.70+groveRandom()*0.85:0.62+groveRandom()*0.82;
+    const gx=Math.floor(x/cellSize),gz=Math.floor(z/cellSize);let occupied=false;
+    for(let iz=-2;iz<=2&&!occupied;iz++)for(let ix=-2;ix<=2&&!occupied;ix++){
+      for(const other of treeCells.get((gx+ix)+','+(gz+iz))||[]){
+        if(Math.hypot(x-other.x,z-other.z)<(kind==='shrub'?1.1:1.55+scale*0.35)){occupied=true;break;}
+      }
+    }
+    if(occupied)continue;
+    const options=pineGroups.filter(g=>g.kind===kind),group=options[Math.floor(groveRandom()*options.length)],width=0.85+groveRandom()*0.35;
+    group.positions.push(x,h-0.12,z,scale);group.styles.push(groveRandom()*Math.PI*2,width,0.88+groveRandom()*0.16);
+    group.count++;treeCount++;groveAdded++;planted++;
+    const key=gx+','+gz;if(!treeCells.has(key))treeCells.set(key,[]);
+    treeCells.get(key).push({x,z,kind,clearance:2.5*scale*width});
+  }
+}
+const forestEditingStats={original:treeCount,groveAdded,cleared:0,blossoms:0};
+const blossomGroups=[
+  {kind:'blossom',variant:0,mesh:buildPine(0,'blossom'),color:[0.79,0.41,0.51],bark:[0.25,0.18,0.17],positions:[],styles:[],count:0},
+  {kind:'blossom',variant:1,mesh:buildPine(1,'blossom'),color:[0.94,0.72,0.74],bark:[0.30,0.22,0.20],positions:[],styles:[],count:0}
+];
+const blossomSites=[];
+for(const [clusterZ,side] of [[132,-1],[82,1],[-8,-1],[-48,1]]){
+  for(let j=0;j<2;j++){
+    const z=clusterZ+j*7.0;
+    let selected=null;
+    for(let offset=2.8;offset<16;offset+=0.6){
+      const x=riverX(z)+side*(riverW(z)+offset),h=surfaceH(x,z);
+      const slope=Math.hypot(surfaceH(x+0.7,z)-surfaceH(x-0.7,z),surfaceH(x,z+0.7)-surfaceH(x,z-0.7))/1.4;
+      if(h>1.8&&h<14&&slope<1.1){selected={x,z,h};break;}
+    }
+    if(!selected)continue;
+    const group=blossomGroups[(j+(side>0?1:0))%2],scale=1.02+hash2(j,clusterZ+509)*0.26;
+    group.positions.push(selected.x,selected.h-0.12,selected.z,scale);
+    group.styles.push(hash2(j,clusterZ+521)*Math.PI*2,0.92+j*0.08,0.92+j*0.04);group.count++;
+    blossomSites.push(selected);forestEditingStats.blossoms++;
+  }
+}
+// 疏開花樹周圍的部分樹木，留出通往河道和石橋的視線。
+for(const group of pineGroups){
+  const positions=[],styles=[];
+  for(let i=0;i<group.count;i++){
+    const p=group.positions.slice(i*4,i*4+4),x=p[0],z=p[2];
+    const shore=Math.abs(x-riverX(z))-riverW(z),large=group.kind==='conifer'||group.kind==='pine';
+    const focal=blossomSites.some(b=>Math.hypot(x-b.x,z-b.z)<(large?5.5:3.3));
+    const nearRiver=shore<28&&z>-60&&z<180;
+    const bridgeOpening=Math.abs(z-stoneBridge.z)<20&&shore<20;
+    const thin=large&&nearRiver&&hash2(Math.round(x*7),Math.round(z*7)+611)<(bridgeOpening?0.45:0.10);
+    if(focal||thin){forestEditingStats.cleared++;continue;}
+    positions.push(...p);styles.push(...group.styles.slice(i*3,i*3+3));
+  }
+  group.positions=positions;group.styles=styles;group.count=positions.length/4;
+}
+pineGroups.push(...blossomGroups);
+for(const group of pineGroups){
+  gl.bindVertexArray(group.mesh.vao);
+  for(const [location,size,data] of [[2,4,group.positions],[3,3,group.styles]]){
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);
+    gl.vertexAttribDivisor(location,1);
+  }
+  gl.bindVertexArray(null);
+}
+
+// 岸邊細節使用獨立亂數，維持原本樹木的種類、大小與落點。
+async function buildShoreGroups(){
+  const specs=[
+    ...Array.from({length:3},(_,variant)=>({kind:'rock',variant,color:[0.35,0.45,0.43],bark:[0.22,0.34,0.30],wind:0,dens:0.94})),
+    ...Array.from({length:2},(_,variant)=>({kind:'grass',variant,color:[0.42,0.55,0.28],bark:[0.48,0.48,0.29],wind:0.065,dens:0.84})),
+    ...Array.from({length:2},(_,variant)=>({kind:'reed',variant,color:[0.46,0.57,0.33],bark:[0.56,0.48,0.30],wind:0.045,dens:0.86}))
+  ];
+  const groups=specs.map(spec=>({...spec,mesh:buildShorePart(spec.kind,spec.variant),positions:[],styles:[],count:0}));
+  let shoreSeed=73129;
+  function random(){shoreSeed=(Math.imul(shoreSeed,1664525)+1013904223)>>>0;return shoreSeed/4294967296;}
+  const occupied=new Set();
+  function add(kind,x,z,h,scale){
+    if(Math.abs(z-stoneBridge.z)<6&&Math.abs(x-stoneBridge.x)<stoneBridge.span+3)return;
+    const key=kind+':'+Math.floor(x/1.4)+','+Math.floor(z/1.4);
+    if(occupied.has(key))return;occupied.add(key);
+    const options=groups.filter(g=>g.kind===kind),group=options[Math.floor(random()*options.length)];
+    group.positions.push(x,h-0.06,z,scale);
+    group.styles.push(random()*Math.PI*2,0.75+random()*0.5,0.85+random()*0.23);group.count++;
+  }
+  // 在實際三角網格上尋找水線高度，避免依河寬猜測而漂浮在水上。
+  function bankPoint(z,side,target){
+    const centre=riverX(z),w=riverW(z);
+    let lo=Math.max(0,w-10),hi=lo;
+    if(surfaceH(centre+side*lo,z)>target)return null;
+    while(hi<w+40&&surfaceH(centre+side*hi,z)<target){lo=hi;hi+=1.5;}
+    if(hi>=w+40)return null;
+    for(let j=0;j<12;j++){
+      const mid=(lo+hi)/2;
+      if(surfaceH(centre+side*mid,z)<target)lo=mid;else hi=mid;
+    }
+    const x=centre+side*(lo+hi)/2;
+    return {x,z,h:surfaceH(x,z)};
+  }
+  statusText.textContent='正在鋪設濕岸、碎岩與草叢…';await yieldUI();
+  for(let k=0;k<850;k++){
+    if(k%300===0)await yieldUI();
+    const z=(random()*2-1)*220,side=random()<0.5?-1:1;
+    const patch=fbm(z*0.036+8,side*7.1,3);
+    if(random()>smoothstep(0.40,0.66,patch)*0.55)continue;
+    const p=bankPoint(z,side,-0.65+random()*0.95);if(!p)continue;
+    add('rock',p.x,p.z,p.h,0.24+Math.pow(random(),2.2)*1.08);
+  }
+  for(let k=0;k<900;k++){
+    if(k%300===0)await yieldUI();
+    const z=(random()*2-1)*220,side=random()<0.5?-1:1;
+    const patch=fbm(z*0.029+21,side*4.3,3);
+    if(random()>smoothstep(0.42,0.67,patch)*0.65)continue;
+    const p=bankPoint(z,side,-0.55+random()*0.40);if(!p)continue;
+    add('reed',p.x,p.z,p.h,0.62+random()*0.58);
+  }
+  for(let k=0;k<2900;k++){
+    if(k%350===0)await yieldUI();
+    const z=(random()*2-1)*220;
+    let x;
+    if(k<700){
+      const p=bankPoint(z,random()<0.5?-1:1,2.0+random()*6.0);if(!p)continue;x=p.x;
+    }else x=(random()*2-1)*220;
+    const h=surfaceH(x,z);if(h<1.3||h>35)continue;
+    const slope=Math.hypot(surfaceH(x+0.5,z)-surfaceH(x-0.5,z),surfaceH(x,z+0.5)-surfaceH(x,z-0.5));
+    if(slope>0.42)continue;
+    const patch=fbm(x*0.047+14,z*0.047-3,3);
+    if(random()>smoothstep(0.35,0.65,patch)*0.8)continue;
+    add('grass',x,z,h,0.65+random()*0.70);
+  }
+  for(const group of groups){
+    gl.bindVertexArray(group.mesh.vao);
+    for(const [location,size,data] of [[2,4,group.positions],[3,3,group.styles]]){
+      const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);gl.vertexAttribDivisor(location,1);
+    }
+    gl.bindVertexArray(null);
+  }
+  return groups;
+}
+const shoreGroups=await buildShoreGroups();
+
+// 側谷瀑布採用額外岩壁與抬升的小水潭，不重算原有森林或主河道。
+// 崖頂、水幕、水潭與回流溪段依同一處地形配置，讓水與岩壁接起來。
+function buildWaterfallSite(){
+  const originalHeights=new Float32Array(terrainHeights),terrainW=N+1,terrainStep=SIZE/N;
+  function baseGroundH(x,zp){
+    const gx=Math.max(0,Math.min(N,(x+HALF)/terrainStep)),gz=Math.max(0,Math.min(N,(zp+HALF)/terrainStep));
+    const i=Math.min(N-1,Math.floor(gx)),j=Math.min(N-1,Math.floor(gz)),fx=gx-i,fz=gz-j;
+    const a=originalHeights[j*terrainW+i],b=originalHeights[j*terrainW+i+1],c=originalHeights[(j+1)*terrainW+i],d=originalHeights[(j+1)*terrainW+i+1];
+    return fx+fz<=1?a+(b-a)*fx+(c-a)*fz:d+(c-d)*(1.-fx)+(b-d)*(1.-fz);
+  }
+  const z=45,poolX=59.2,poolY=baseGroundH(poolX,z)+0.72;
+  let mouthX=riverX(z)+riverW(z);
+  for(let i=0;i<200&&baseGroundH(mouthX,z)>-0.18;i++)mouthX-=0.3;
+  const creekCentre=t=>[poolX+(mouthX-poolX)*t,z+1.4*Math.sin(t*Math.PI)];
+  const creekLevel=t=>poolY+(0.035-poolY)*smoothstep(0,1,t);
+  const shelfY=baseGroundH(90,z)+0.82;
+  function cliffHeight(x,zp){
+    const base=baseGroundH(x,zp),dz=zp-z;
+    // 四層錯開的岩階形成崖面起伏。
+    // 中央崖面的高度沿 x 軸維持單向變化，水幕才能順著崖面落下。
+    const front=63.0+1.25*Math.sin(dz*0.58)+0.58*Math.sin(dz*1.23)
+      +0.65*(fbm(zp*0.18,4.7,2)-0.5);
+    const strata=0.18*smoothstep(front-4.8,front-3.9,x)
+      +0.26*smoothstep(front-3.4,front-2.4,x)
+      +0.27*smoothstep(front-1.9,front-0.95,x)
+      +0.29*smoothstep(front-0.45,front+0.42,x);
+    const shelf=strata*(1.-smoothstep(88.,98.,x));
+    const shoulder=1.-Math.exp(-dz*dz/14.);
+    const sideWidth=11.6+1.1*Math.sin(dz*0.53);
+    const sides=1.-smoothstep(3.8,sideWidth,Math.abs(dz));
+    const crestBreak=2.2*Math.sin(dz*0.69)+0.85*Math.sin(dz*1.61)
+      +2.0*(fbm(zp*0.24,7.3,3)-0.5);
+    const ledge=shelfY+(x-65.)*0.10+crestBreak-Math.abs(dz)*0.10;
+    let h=base+Math.max(0,ledge-base)*shelf*sides;
+    // 兩側大小不一的突出岩塊會接進同一張地形網格。
+    const crag=(cx,cz,rx,rz,height)=>height*Math.exp(-(((x-cx)/rx)**2+((dz-cz)/rz)**2));
+    h+=shoulder*(crag(68.8,-4.8,3.4,2.0,4.5)+crag(73.5,4.3,4.0,2.5,5.8)
+      +crag(79.0,-2.9,4.5,2.4,3.3))*sides;
+    const r=Math.hypot((x-poolX)/3.8,dz/4.5);
+    const mask=1.-smoothstep(0.84,1.35,r);
+    const rim=poolY-0.30+0.43*smoothstep(0.65,1.0,r);
+    h=Math.max(h,base+Math.max(0,rim-base)*mask);
+    return h;
+  }
+  // 直接更新原地形頂點，避免雙層面片在接縫產生深度閃爍與尖刺。
+  const coverage=new Float32Array(terrainHeights.length);
+  for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){
+    const x=-HALF+i*terrainStep,zp=-HALF+j*terrainStep,k=j*terrainW+i;
+    if(x<50||x>99||Math.abs(zp-z)>14)continue;
+    terrainHeights[k]=Math.max(originalHeights[k],cliffHeight(x,zp));
+    coverage[k]=smoothstep(0.06,0.65,terrainHeights[k]-originalHeights[k]);
+  }
+  // 回流溪只切出窄槽，水位沿流向逐步降低。
+  for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){
+    const x=-HALF+i*terrainStep,zp=-HALF+j*terrainStep,k=j*terrainW+i;
+    if(x<mouthX-1.8||x>poolX+1.8||Math.abs(zp-z)>4.9)continue;
+    const t=Math.max(0,Math.min(1,(x-poolX)/(mouthX-poolX)));
+    const centre=creekCentre(t),distance=Math.hypot(x-centre[0],zp-centre[1]);
+    const cut=1.-smoothstep(1.85,3.4,distance);
+    const bed=creekLevel(t)-0.55;
+    terrainHeights[k]-=Math.max(0,terrainHeights[k]-bed)*cut;
+    coverage[k]=Math.max(coverage[k],smoothstep(0.06,0.65,Math.abs(terrainHeights[k]-originalHeights[k])));
+  }
+  const vertices=new Float32Array(terrainHeights.length*6);
+  for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){
+    const k=j*terrainW+i,h=terrainHeights;
+    let n=[(h[j*terrainW+Math.max(0,i-1)]-h[j*terrainW+Math.min(N,i+1)])/(2*terrainStep),1,
+      (h[Math.max(0,j-1)*terrainW+i]-h[Math.min(N,j+1)*terrainW+i])/(2*terrainStep)];
+    const len=Math.hypot(...n);n=n.map(v=>v/len);
+    vertices.set([-HALF+i*terrainStep,h[k],-HALF+j*terrainStep,...n],k*6);
+  }
+  gl.bindVertexArray(meshTerrain.vao);
+  const vertexBuffer=gl.getVertexAttrib(0,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffer);gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+  const coverageBuffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,coverageBuffer);gl.bufferData(gl.ARRAY_BUFFER,coverage,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,1,gl.FLOAT,false,0,0);gl.bindVertexArray(null);
+  const groundHeight=(x,zp)=>surfaceH(x,zp);
+  const water=[];
+  function makeEffect(data){
+    const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,24,12);
+    gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
+    gl.bindVertexArray(null);
+    const centre=[0,0,0];for(let i=0;i<data.length;i+=6)for(let j=0;j<3;j++)centre[j]+=data[i+j]/(data.length/6);
+    water.push({vao,count:data.length/6,centre});
+  }
+  // 沿路徑鋪一條有寬度的水面。conform 開啟時會貼著地形。
+  function strip(path,width,kind,segments,conform=false){
+    const data=[];
+    const vertex=(t,side)=>{const p=path(t),zp=p[2]+width(t)*side;
+      return [p[0],conform?groundHeight(p[0],zp)+0.14:p[1],zp,side,t,kind];};
+    for(let j=0;j<segments;j++){
+      for(let i=0;i<12;i++){
+        const t=j/segments,s=(j+1)/segments,u=-1+i/6,v=-1+(i+1)/6;
+        const a=vertex(t,u),b=vertex(t,v),c=vertex(s,u),d=vertex(s,v);
+        data.push(...a,...b,...d,...a,...d,...c);
+      }
+    }
+    makeEffect(data);
+  }
+  // 上游細水先沿岩台流向崖邊，主瀑再向外落入水潭。
+  strip(t=>{const x=92-(92-64.3)*t;return [x,0,z+0.18*Math.sin(t*4.)*(1.-t)];},t=>0.70+0.95*smoothstep(0.55,1,t),1,72,true);
+  const topY=groundHeight(64.3,z)+0.12;
+  const curtain=[];
+  // t 是落水進度，u 是橫向位置。每個高度用二分搜尋找出鄰近崖面。
+  function curtainPoint(t,u){
+    const zp=z+(1.65+0.48*t+0.12*Math.sin(t*7.))*u;
+    const crest=groundHeight(64.3,zp)+0.14;
+    if(t===0)return [64.3,crest,zp,u,t,0];
+    const y=crest+(poolY+0.035-crest)*t;
+    let lo=55,hi=64.3;
+    for(let j=0;j<15;j++){
+      const mid=(lo+hi)/2;if(groundHeight(mid,zp)<y)lo=mid;else hi=mid;
+    }
+    return [lo-0.10*smoothstep(0.,0.08,t),y,zp,u,t,0];
+  }
+  for(let j=0;j<48;j++)for(let i=0;i<8;i++){
+    const t=j/48,s=(j+1)/48,u=-1+i/4,v=-1+(i+1)/4;
+    const a=curtainPoint(t,u),b=curtainPoint(t,v),c=curtainPoint(s,u),d=curtainPoint(s,v);
+    curtain.push(...a,...b,...d,...a,...d,...c);
+  }
+  makeEffect(curtain);
+  // 用一小段水面把水幕末端接到水潭。
+  const landing=[];
+  for(let i=0;i<12;i++){
+    const u=-1+i/6,v=-1+(i+1)/6;
+    const a=curtainPoint(1,u),b=curtainPoint(1,v);
+    const c=[poolX-0.7,poolY+0.035,a[2]],d=[poolX-0.7,poolY+0.035,b[2]];
+    const vertex=(p,side,t)=>[...p.slice(0,3),side,t,1];
+    landing.push(...vertex(a,u,0),...vertex(b,v,0),...vertex(d,v,1),
+      ...vertex(a,u,0),...vertex(d,v,1),...vertex(c,u,1));
+  }
+  makeEffect(landing);
+  strip(t=>{
+    const [x,zp]=creekCentre(t);
+    return [x,creekLevel(t)+0.035*(1.-t),zp];
+  },t=>0.64+0.09*Math.sin(t*5.)+0.22*t,1.25,96);
+  const pool=[];
+  for(let j=0;j<36;j++){
+    const a=j/36*Math.PI*2,b=(j+1)/36*Math.PI*2;
+    pool.push(poolX,poolY+0.035,z,0,0,2,
+      poolX+Math.cos(a)*3.5,poolY+0.035,z+Math.sin(a)*3.8,Math.cos(a),Math.sin(a),2,
+      poolX+Math.cos(b)*3.5,poolY+0.035,z+Math.sin(b)*3.8,Math.cos(b),Math.sin(b),2);
+  }
+  makeEffect(pool);
+  // 柔邊水霧以數個交錯面片形成，透明度低，避免白色方片。
+  for(let j=0;j<4;j++){
+    const angle=j*Math.PI/4,side=[Math.cos(angle),Math.sin(angle)],cx=poolX+0.6,cz=z+(j-1.5)*0.45;
+    const half=2.7+j*0.25,bottom=poolY-0.05,top=poolY+3.0+(j%2)*0.7;
+    const a=[cx-side[0]*half,bottom,cz-side[1]*half,-1,-1,3],b=[cx+side[0]*half,bottom,cz+side[1]*half,1,-1,3];
+    const c=[cx-side[0]*half,top,cz-side[1]*half,-1,1,3],d=[cx+side[0]*half,top,cz+side[1]*half,1,1,3];
+    makeEffect([...a,...b,...d,...a,...d,...c]);
+  }
+  const rocks=[];
+  for(let i=0;i<10;i++){
+    const a=i/10*Math.PI*2;if(Math.cos(a)<-0.65)continue;
+    const x=poolX+Math.cos(a)*3.9,zp=z+Math.sin(a)*4.0;
+    const scale=0.55+hash2(i,911)*0.45;
+    rocks.push({mesh:buildShorePart('rock',i%3),model:chain(M.trans(x,groundHeight(x,zp)-0.10,zp),M.rotY(i*1.7),M.scale(scale,scale,scale))});
+  }
+  return {water,rocks,groundHeight,baseGroundH,poolX,poolY,z,topY,mouthX,creekCentre,creekLevel,curtainPoint};
+}
+const waterfallSite=buildWaterfallSite();
+// 只移除落在新增岩台內、或根部擋住瀑布回流溪水的樹木。
+// 其餘森林的亂數、落點與大小維持不變。
+for(const group of pineGroups){
+  const positions=[],styles=[];
+  for(let i=0;i<group.count;i++){
+    const x=group.positions[i*4],z=group.positions[i*4+2];
+    const raised=waterfallSite.groundHeight(x,z)-waterfallSite.baseGroundH(x,z)>0.45;
+    const creek=x>waterfallSite.mouthX&&x<waterfallSite.poolX+4&&Math.abs(z-waterfallSite.z)<2.7;
+    const basin=Math.hypot((x-waterfallSite.poolX)/5.8,(z-waterfallSite.z)/6.0)<1.;
+    const scale=group.positions[i*4+3],width=group.styles[i*3+1];
+    const radius={pine:4.4,conifer:2.5,broadleaf:3.8,poplar:1.6,shrub:1.7,blossom:3.6}[group.kind]*scale*width;
+    const vx=waterfallSite.poolX-38,vz=waterfallSite.z-80;
+    const t=Math.max(0,Math.min(1,((x-38)*vx+(z-80)*vz)/(vx*vx+vz*vz)));
+    const corridor=t>0.15&&Math.hypot(x-38-vx*t,z-80-vz*t)<2.8+radius;
+    if(raised||creek||basin||corridor)continue;
+    positions.push(...group.positions.slice(i*4,i*4+4));styles.push(...group.styles.slice(i*3,i*3+3));
+  }
+  if(positions.length===group.positions.length)continue;
+  group.positions=positions;group.styles=styles;group.count=positions.length/4;
+  gl.bindVertexArray(group.mesh.vao);
+  for(const [location,data] of [[2,positions],[3,styles]]){
+    const buffer=gl.getVertexAttrib(location,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+  }
+  gl.bindVertexArray(null);
+}
+treeCount=pineGroups.reduce((sum,g)=>sum+g.count,0);
+// 遠樹用簡化網格，主畫面和倒影共用同一批樹木資料。
+for(const group of pineGroups){
+  gl.bindVertexArray(group.mesh.vao);
+  group.nearBuffers=[2,3].map(location=>gl.getVertexAttrib(location,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING));
+  group.farMesh=buildPine(group.variant,group.kind,0.45);
+  gl.bindVertexArray(group.farMesh.vao);
+  group.farBuffers=[2,3].map((location,index)=>{
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,0,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,index===0?4:3,gl.FLOAT,false,0,0);
+    gl.vertexAttribDivisor(location,1);return buffer;
+  });
+  gl.bindVertexArray(null);group.nearCount=0;group.farCount=0;
+}
+let forestBatchKey='';
+function updateForestBatches(){
+  const aspect=Math.max(1,canvas.clientWidth)/Math.max(1,canvas.clientHeight);
+  // 相機位置、水平角度和畫面比例以區間記錄，跨區後才重分配樹木批次。
+  const key=cam.pos.map(v=>Math.floor(v/2)).join(',')+':'+quality.pixels+':'+Math.floor(cam.yaw*36/Math.PI)+':'+aspect.toFixed(2);
+  if(key===forestBatchKey)return;forestBatchKey=key;
+  // 這是近、遠樹模型的切換距離。畫質越高，越遠的樹還會保留細節。
+  const threshold=quality===qualitySettings.low?55:quality===qualitySettings.high?105:78;
+  const tangent=Math.tan(55*Math.PI/360)*aspect+0.12;
+  const forward=[Math.sin(cam.yaw),-Math.cos(cam.yaw)];
+  for(const group of pineGroups){
+    const near=[[],[]],far=[[],[]];
+    for(let i=0;i<group.count;i++){
+      const p=group.positions.slice(i*4,i*4+4);
+      const dx=p[0]-cam.pos[0],dz=p[2]-cam.pos[2];
+      const radius=6*p[3]*group.styles[i*3+1]+4;
+      const along=dx*forward[0]+dz*forward[1],across=Math.abs(dx*forward[1]-dz*forward[0]);
+      // 依水平方位剔除視野外的樹，讓主畫面和倒影都能使用同一批資料。
+      if(along< -radius||across>Math.max(0,along)*tangent+radius*(1+tangent))continue;
+      const distance=Math.hypot(dx,p[1]-cam.pos[1],dz);
+      if(distance>420)continue;
+      const target=distance<threshold?near:far;
+      target[0].push(...p);target[1].push(...group.styles.slice(i*3,i*3+3));
+    }
+    group.nearCount=near[0].length/4;group.farCount=far[0].length/4;
+    for(const [buffers,data] of [[group.nearBuffers,near],[group.farBuffers,far]]){
+      for(let i=0;i<2;i++){gl.bindBuffer(gl.ARRAY_BUFFER,buffers[i]);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data[i]),gl.DYNAMIC_DRAW);}
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,null);
+}
+// 碰撞高度取基礎地形和瀑布場地的較高值。
+const sceneGroundH=(x,z)=>Math.max(surfaceH(x,z),waterfallSite.groundHeight(x,z));
+
+/* =====================================================================
+   六、相機與控制
+   ===================================================================== */
+// 開場與重設共用同一個位置和朝向，可以從這裡調進場構圖。
+const START={x:riverX(165),y:14,z:165,yaw:0,pitch:0.05};
+const cam={pos:[START.x,START.y,START.z],yaw:START.yaw,pitch:START.pitch,speed:25};
+function resetCam(){
+  cam.pos=[START.x,START.y,START.z]; cam.yaw=START.yaw; cam.pitch=START.pitch;
+}
+// 把相機的水平轉角與俯仰角換成前進方向，供移動和繪製使用。
+function camFwd(){
+  const cp=Math.cos(cam.pitch);
+  return [Math.sin(cam.yaw)*cp, Math.sin(cam.pitch), -Math.cos(cam.yaw)*cp];
+}
+const keys={},touchKeys=new Set(),touchPointers=new Map();
+const controlKeys=new Set(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','Space','ShiftLeft','ShiftRight','ArrowLeft','ArrowRight','ArrowUp','ArrowDown']);
+let dragging=false,activePointer=null,lx=0,ly=0;
+function stopDrag(){
+  const id=activePointer;dragging=false;activePointer=null;
+  if(id!==null&&canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+}
+// 切換視角或失去焦點時清除按鍵和拖曳狀態，避免相機繼續移動。
+function clearInput(){
+  for(const key of Object.keys(keys)) delete keys[key];
+  touchKeys.clear();touchPointers.clear();stopDrag();
+  document.querySelectorAll('#touchControls button').forEach(b=>b.setAttribute('aria-pressed','false'));
+}
+function isControl(target){return target instanceof Element&&!!target.closest('input,select,button,summary,textarea,[contenteditable]');}
+// 面板有焦點或正在輸入文字時，讓按鍵保留原本的用途。
+addEventListener('keydown',e=>{
+  if(e.isComposing||e.altKey||e.ctrlKey||e.metaKey||isControl(e.target)||!controlKeys.has(e.code)) return;
+  keys[e.code]=true;e.preventDefault();
+});
+addEventListener('keyup',e=>{delete keys[e.code];});
+addEventListener('blur',clearInput);
+document.getElementById('panel').addEventListener('focusin',clearInput);
+// 鎖定這次拖曳的指標，游標離開畫布時仍可持續轉動視角。
+canvas.addEventListener('pointerdown',e=>{
+  if(activePointer!==null||!e.isPrimary||e.button!==0) return;
+  canvas.focus({preventScroll:true});dragging=true;activePointer=e.pointerId;
+  lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);
+});
+for(const type of ['pointerup','pointercancel','lostpointercapture']){
+  canvas.addEventListener(type,e=>{if(e.pointerId===activePointer)stopDrag();});
+}
+canvas.addEventListener('pointermove',e=>{
+  if(!dragging||e.pointerId!==activePointer) return;
+  // 0.0035 控制拖曳轉向的靈敏度，俯仰角另外限制在固定範圍內。
+  cam.yaw-=(e.clientX-lx)*0.0035;
+  cam.pitch=Math.max(-1.4,Math.min(1.4,cam.pitch+(e.clientY-ly)*0.0035));
+  lx=e.clientX; ly=e.clientY;
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+// 滾輪按比例調整移動速度，並同步更新面板上的數字。
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(!e.deltaY)return;
+  cam.speed=Math.max(5,Math.min(200,cam.speed*(e.deltaY<0?1.12:1/1.12)));
+  document.getElementById('speed').value=Math.round(cam.speed);
+  document.getElementById('speedv').textContent=Math.round(cam.speed);
+},{passive:false});
+canvas.addEventListener('dblclick',resetCam);
+document.getElementById('reset').addEventListener('click',resetCam);
+// 預設視角用眼睛位置和目標點算旋轉角，並把眼睛高度限制在地面上方。
+function lookAtScene(eye,target){
+  clearInput();cam.pos=[...eye];
+  cam.pos[1]=Math.max(cam.pos[1],sceneGroundH(cam.pos[0],cam.pos[2])+2.2);
+  const dx=target[0]-cam.pos[0],dy=target[1]-cam.pos[1],dz=target[2]-cam.pos[2];
+  cam.yaw=Math.atan2(dx,-dz);cam.pitch=Math.atan2(dy,Math.hypot(dx,dz));
+}
+document.getElementById('flowerView').addEventListener('click',()=>{
+  const p=blossomSites[0];if(!p)return;
+  lookAtScene([riverX(p.z+17),10,p.z+17],[p.x,p.h+3.2,p.z]);
+});
+document.getElementById('landscapeView').addEventListener('click',()=>{
+  lookAtScene([riverX(135),42,135],[riverX(-12),22,-12]);
+});
+document.getElementById('bridgeView').addEventListener('click',()=>{
+  lookAtScene([riverX(28),15,28],[stoneBridge.x,12,stoneBridge.z]);
+});
+document.getElementById('boatView').addEventListener('click',()=>{
+  clearInput();const boat=boatPose(time);
+  cam.pos=[boat.x+13,9,boat.z+15];
+  cam.yaw=Math.atan2(boat.x-cam.pos[0],cam.pos[2]-boat.z);
+  cam.pitch=Math.atan2(0.5-cam.pos[1],Math.hypot(13,15));
+});
+document.getElementById('waterfallView').addEventListener('click',()=>{
+  clearInput();cam.pos=[38,30,80];
+  const dx=waterfallSite.poolX+1-cam.pos[0],dz=waterfallSite.z-cam.pos[2];
+  cam.yaw=Math.atan2(dx,-dz);cam.pitch=Math.atan2((waterfallSite.poolY+waterfallSite.topY)*0.5-cam.pos[1],Math.hypot(dx,dz));
+});
+// 觸控方向鍵也會寫入按住狀態，和鍵盤走同一套移動計算。
+for(const button of document.querySelectorAll('#touchControls button')){
+  button.addEventListener('pointerdown',e=>{
+    if(e.button!==0)return;e.preventDefault();
+    touchPointers.set(e.pointerId,button.dataset.key);touchKeys.add(button.dataset.key);
+    button.setAttribute('aria-pressed','true');button.setPointerCapture(e.pointerId);
+  });
+  for(const type of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(type,e=>{
+    const key=touchPointers.get(e.pointerId);if(!key)return;
+    touchPointers.delete(e.pointerId);
+    if(![...touchPointers.values()].includes(key)){touchKeys.delete(key);button.setAttribute('aria-pressed','false');}
+  });
+}
+const pressed=key=>!!keys[key]||touchKeys.has(key);
+
+// 控制面板
+let sunAz=28, sunEl=20, sunInf=0.5, mistAmt=1.0, cloudAmt=1.0, sunDir=[0,0,-1];
+// 面板傳入的是角度。算好的方向向量會交給地形、道具、天空和水面。
+function updateSun(){
+  // 方位角決定水平朝向，高度角決定光從多高的位置照下來。
+  const a=sunAz*Math.PI/180, e=sunEl*Math.PI/180;
+  sunDir=[Math.sin(a)*Math.cos(e), Math.sin(e), -Math.cos(a)*Math.cos(e)];
+}
+function bindSlider(id,vid,setter,fmt){
+  const el=document.getElementById(id), vv=document.getElementById(vid);
+  function f(){ setter(parseFloat(el.value)); vv.textContent=fmt?fmt(parseFloat(el.value)):el.value; }
+  el.addEventListener('input',f); f();
+}
+bindSlider('az','azv',v=>{sunAz=v;updateSun();});
+bindSlider('el','elv',v=>{sunEl=v;updateSun();});
+bindSlider('inf','infv',v=>{sunInf=v;},v=>v.toFixed(2));
+bindSlider('mist','mistv',v=>{mistAmt=v;},v=>v.toFixed(2));
+bindSlider('cloud','cloudv',v=>{cloudAmt=v;},v=>v.toFixed(2));
+bindSlider('speed','speedv',v=>{cam.speed=v;});
+const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
+let paused=motionPreference.matches;
+const pauseButton=document.getElementById('pause');
+function updatePause(){pauseButton.textContent=paused?'繼續動畫':'暫停動畫';pauseButton.setAttribute('aria-pressed',String(paused));}
+pauseButton.addEventListener('click',()=>{paused=!paused;updatePause();});
+motionPreference.addEventListener('change',e=>{paused=e.matches;updatePause();});
+updatePause();
+// dpr 和 pixels 分別限制像素倍率與畫布總像素，測 FPS 時記下實際畫布尺寸。
+const qualitySettings={low:{dpr:1,pixels:800000},balanced:{dpr:1.5,pixels:2000000},high:{dpr:2,pixels:5000000}};
+let quality=qualitySettings.balanced;
+document.getElementById('quality').addEventListener('change',e=>{quality=qualitySettings[e.target.value]||qualitySettings.balanced;});
+
+/* =====================================================================
+   七、動態物件：小船與飛鳥
+   ===================================================================== */
+const normalCache=new WeakMap();
+function setModel(u,model){
+  let normal=normalCache.get(model);
+  if(!normal){
+    const a=[model[0],model[1],model[2]], b=[model[4],model[5],model[6]], c=[model[8],model[9],model[10]];
+    const cross=(p,q)=>[p[1]*q[2]-p[2]*q[1],p[2]*q[0]-p[0]*q[2],p[0]*q[1]-p[1]*q[0]];
+    const x=cross(b,c),y=cross(c,a),z=cross(a,b),det=a[0]*x[0]+a[1]*x[1]+a[2]*x[2];
+    if(Math.abs(det)<1e-12) throw new Error('模型縮放不可為零');
+    normal=new Float32Array([...x,...y,...z].map(v=>v/det)); normalCache.set(model,normal);
+  }
+  gl.uniformMatrix4fv(u('uModel'),false,model);
+  gl.uniformMatrix3fv(u('uNormal'),false,normal);
+}
+const ID=M.ident();
+const FOG_FAR=520;
+
+function drawProp(mesh,model,color,dens,flat,clip,stone=0){
+  setModel(UP,model);
+  gl.uniform3fv(UP('uColor'),color);
+  gl.uniform1f(UP('uDens'),dens);
+  gl.uniform1f(UP('uFlat'),flat);
+  gl.uniform1f(UP('uClip'),clip);
+  gl.uniform1f(UP('uStone'),stone);
+  gl.uniform1f(UP('uTreeColor'),0);
+  gl.uniform1f(UP('uBlossom'),0);
+  gl.bindVertexArray(mesh.vao);
+  if(mesh.indexed) gl.drawElements(gl.TRIANGLES,mesh.count,mesh.idxType,0);
+  else gl.drawArrays(gl.TRIANGLES,0,mesh.count);
+}
+
+function boatPose(time){
+  // 小船沿河道中心緩慢來回，船頭朝向河道切線
+  // 60 是往返中心，70 是沿 z 軸的往返幅度，0.035 控制往返速度。
+  const z=60+70*Math.sin(time*0.035);
+  const dz=Math.cos(time*0.035);                 // 行進方向（正負號）
+  const x=riverX(z);
+  // 接近往返端點時漸進迴轉，正常場景與倒影使用相同方向。
+  const heading=Math.atan2(-1,riverDX(z))-Math.PI*smoothstep(-0.10,0.10,-dz);
+  return {x,z,heading,speed:Math.min(1,Math.abs(dz)*Math.hypot(1,riverDX(z)))};
+}
+// 水面著色器收到目前船位和 16 個較早的船位，用來畫尾波。
+const boatTrail=new Float32Array(17*4);
+function setBoatWater(time){
+  const pose=boatPose(time);
+  gl.uniform4f(UW('uBoat'),pose.x,pose.z,pose.heading,pose.speed);
+  for(let i=0;i<=16;i++){
+    // 動畫開始前的歷史取樣把速度設為零，讓尾波隨船前進逐漸出現。
+    const age=i*0.55, past=boatPose(Math.max(0,time-age));
+    boatTrail.set([past.x,past.z,age<=time?past.speed:0,0],i*4);
+  }
+  gl.uniform4fv(UW('uBoatTrail[0]'),boatTrail);
+}
+function fisherPose(time){
+  const phase=time*1.55,stroke=-Math.cos(phase);
+  // 回槳時抬高槳葉，雙手的位置沿著槳柄計算。
+  const lift=Math.pow(Math.max(0,Math.sin(phase)),1.4)*0.76;
+  const top=[1.22+stroke*0.08,1.55,0.13];
+  const tip=[1.50+stroke*0.88,-0.23+lift,1.55];
+  const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+  const lean=stroke*0.065;
+  return {top,tip,lean,hands:[mix(top,tip,0.15),mix(top,tip,0.31)]};
+}
+function drawFisher(base,time){
+  const pose=fisherPose(time),coat=[0.13,0.17,0.15],skin=[0.39,0.32,0.23],wood=[0.22,0.17,0.10];
+  function oval(p,r,color){drawProp(meshSphere,chain(base,M.trans(...p),M.scale(...r)),color,0.96,1,0);}
+  function span(a,b,width,depth,color,box=false){
+    const d=b.map((v,i)=>v-a[i]),length=Math.hypot(...d),y=d.map(v=>v/length);
+    let x=[y[2],0,-y[0]],xl=Math.hypot(...x);
+    if(xl<1e-6){x=[1,0,0];xl=1;}x=x.map(v=>v/xl);
+    const z=[x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];
+    const m=M.ident();
+    for(let i=0;i<3;i++){m[i]=x[i];m[4+i]=y[i];m[8+i]=z[i];m[12+i]=(a[i]+b[i])*0.5;}
+    drawProp(box?meshBox:meshSphere,chain(base,m,M.scale(width,length*(box?1:0.5),depth)),color,0.96,1,0);
+  }
+  const hip=[1.12,0.64,0],chest=[1.23+pose.lean,1.23,0];
+  drawProp(meshBox,chain(base,M.trans(1.12,0.40,0),M.scale(0.44,0.12,0.60)),wood,0.96,1,0);
+  for(const side of [-1,1])drawProp(meshBox,chain(base,M.trans(1.12,0.22,side*0.23),M.scale(0.12,0.36,0.10)),wood,0.96,1,0);
+  oval(hip,[0.23,0.18,0.25],coat);
+  span(hip,chest,0.22,0.25,coat);
+  for(const side of [-1,1]){
+    const knee=[1.57,0.43,side*0.19],foot=[1.85,0.14,side*0.21];
+    span([1.12,0.62,side*0.16],knee,0.11,0.12,coat);
+    span(knee,foot,0.085,0.095,coat);oval(foot,[0.17,0.07,0.10],[0.09,0.09,0.07]);
+  }
+  oval([chest[0]+0.025,1.39,0],[0.085,0.12,0.085],skin);
+  oval([chest[0]+0.055,1.56,0],[0.14,0.18,0.135],skin);
+  drawProp(fisherHat,chain(base,M.trans(chest[0]+0.055,1.70,0),M.rotZ(-0.07+pose.lean*0.4)),[0.26,0.23,0.15],0.96,1,0);
+  for(let i=0;i<2;i++){
+    const shoulder=[chest[0],1.21,i===0?0.22:-0.22],hand=pose.hands[i];
+    const d=hand.map((v,j)=>v-shoulder[j]),distance=Math.hypot(...d),axis=d.map(v=>v/distance);
+    // 以上臂和前臂等長的條件找出手肘位置，讓手臂接到握槳處。
+    const bend=Math.sqrt(Math.max(0,0.46**2-(distance*0.5)**2));
+    const down=[-0.18,-1,0],dot=down.reduce((sum,v,j)=>sum+v*axis[j],0);
+    let perpendicular=down.map((v,j)=>v-dot*axis[j]);const pl=Math.hypot(...perpendicular);
+    perpendicular=perpendicular.map(v=>v/pl);
+    const elbow=shoulder.map((v,j)=>v+d[j]*0.5+perpendicular[j]*bend);
+    span(shoulder,elbow,0.105,0.10,coat);span(elbow,hand,0.075,0.075,coat);
+    oval(hand,[0.065,0.07,0.065],skin);
+  }
+  span(pose.top,pose.tip,0.025,0.025,wood);
+  const bladeStart=pose.top.map((v,i)=>v+(pose.tip[i]-v)*0.78);
+  const bladeEnd=pose.tip.map((v,i)=>v+(v-pose.top[i])*0.12);
+  span(bladeStart,bladeEnd,0.16,0.038,wood);
+}
+function drawBoat(time){
+  const {x,z,heading}=boatPose(time);
+  // 船身套用上下浮動與左右搖晃，漁夫和船篷共用這個姿態。
+  const bob=0.12*Math.sin(time*1.3), roll=0.03*Math.sin(time*0.9);
+  const base=chain(M.trans(x,bob,z),M.rotY(heading),M.rotZ(roll));
+  const dark=[0.10,0.10,0.09], wood=[0.23,0.18,0.115];
+  drawProp(boatHull.shell,base,[0.20,0.17,0.11],0.94,1,0);
+  drawProp(boatHull.inside,base,[0.24,0.19,0.12],0.94,1,0);
+  drawProp(boatHull.rim,base,[0.095,0.085,0.065],0.96,1,0);
+  for(const x of [-2.0,1.0,2.1]){
+    const width=0.82*Math.pow(1-(x/3.2)**2,0.62);
+    drawProp(meshBox,chain(base,M.trans(x,0.27,0),M.scale(0.14,0.065,width)),wood,0.94,1,0);
+  }
+  drawProp(boatCanopy.lining,base,[0.15,0.135,0.095],0.96,1,0);
+  drawProp(boatCanopy.cloth,base,[0.34,0.29,0.19],0.94,1,0);
+  drawProp(boatCanopy.panels,base,[0.31,0.265,0.18],0.94,1,0);
+  drawProp(boatCanopy.cabin,base,wood,0.95,1,0);
+  drawProp(boatCanopy.frame,base,[0.12,0.105,0.07],0.96,1,0);
+  drawFisher(base,time);
+  drawProp(meshBox,chain(base,M.trans(3.0,0.7,0),M.scale(0.06,1.0,0.06)),dark,0.9,1,0);      // 船頭竿
+  drawProp(meshSphere,chain(base,M.trans(3.0,1.3,0),M.scale(0.2,0.2,0.2)),[0.78,0.24,0.17],1.0,1,0); // 朱砂色燈籠
+}
+
+let birdPoseTime=-1,birdPoses=[];
+function drawBirds(time){
+  const col=[0.095,0.125,0.115];
+  // 同一幀的倒影與正常場景共用姿態，也避免暫停時反覆重建矩陣。
+  if(time!==birdPoseTime){
+    birdPoseTime=time;birdPoses=[];
+    for(let i=0;i<11;i++){
+      // 速度、起始角度和航線半徑依鳥的編號錯開，讓牠們各自盤旋。
+      const speed=0.025+(i%4)*0.003,angle=time*speed+i*2.39996;
+      const rx=70+(i%4)*10,rz=44+(i%3)*8;
+      const x=rx*Math.cos(angle),z=15+rz*Math.sin(angle);
+      const y=Math.max(53+(i%5)*4.2+1.6*Math.sin(angle*1.5+i),surfaceH(x,z)+8);
+      const vx=-rx*Math.sin(angle),vz=rz*Math.cos(angle);
+      const heading=Math.atan2(-vz,vx),bank=0.10*Math.sin(angle+i*0.7);
+      const size=0.58+hash2(i,107)*0.30;
+      const base=chain(M.trans(x,y,z),M.rotY(heading),M.rotX(bank),M.scale(size,size,size));
+      // burst 控制撲翅幅度的變化，讓飛鳥交替出現撲翅和滑翔。
+      const burst=smoothstep(0.12,0.70,Math.sin(time*0.27+i*1.37));
+      const beat=time*(4.1+(i%3)*0.32)+i*2.13;
+      const stroke=0.08+burst*0.48*Math.sin(beat);
+      const flex=-0.14+burst*0.26*Math.sin(beat-0.65);
+      const poses=[{mesh:birdMeshes.body,model:base}];
+      for(const side of [-1,1]){
+        const inner=chain(base,M.scale(1,1,side),M.rotX(stroke));
+        const outer=chain(inner,M.trans(0.07,0.10,1.15),M.rotX(flex));
+        poses.push({mesh:birdMeshes.inner,model:inner},{mesh:birdMeshes.outer,model:outer});
+      }
+      birdPoses.push(...poses);
+    }
+  }
+  for(const pose of birdPoses)drawProp(pose.mesh,pose.model,col,0.92,1,0);
+}
+
+/* =====================================================================
+   八、繪製
+   ===================================================================== */
+// 倒影貼圖保持不透明，由水面著色器混合河色和反射色。
+const reflectionTarget={framebuffer:gl.createFramebuffer(),texture:gl.createTexture(),depth:gl.createRenderbuffer(),width:0,height:0};
+gl.bindTexture(gl.TEXTURE_2D,reflectionTarget.texture);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.bindTexture(gl.TEXTURE_2D,null);
+// 倒影貼圖只在尺寸改變時重建。省電用畫布的 50%，其他畫質用 75%（寬與高各自計算）。
+function resizeReflection(w,h){
+  const scale=quality===qualitySettings.low?0.5:0.75;
+  const width=Math.max(1,Math.floor(w*scale)),height=Math.max(1,Math.floor(h*scale));
+  if(width===reflectionTarget.width&&height===reflectionTarget.height)return true;
+  gl.bindTexture(gl.TEXTURE_2D,reflectionTarget.texture);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindRenderbuffer(gl.RENDERBUFFER,reflectionTarget.depth);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,width,height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,reflectionTarget.framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,reflectionTarget.texture,0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,reflectionTarget.depth);
+  const complete=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.bindRenderbuffer(gl.RENDERBUFFER,null);gl.bindTexture(gl.TEXTURE_2D,null);
+  if(!complete){
+    ready=false;animationId=0;fail('無法建立水面倒影貼圖，請嘗試省電畫質或重新載入。');
+    status.hidden=false;statusText.textContent='水面倒影初始化失敗。';reloadButton.hidden=false;
+    return false;
+  }
+  reflectionTarget.width=width;reflectionTarget.height=height;
+  return true;
+}
+let VP=M.ident();
+// 繪製前把相機、太陽、霧和時間送進著色器，主畫面與倒影共用這些數值。
+function setCommon(u,mirror){
+  gl.uniformMatrix4fv(u('uVP'),false,VP);
+  gl.uniform3fv(u('uCam'),cam.pos);
+  gl.uniform1f(u('uMirror'),mirror);
+  gl.uniform3fv(u('uSunDir'),sunDir);
+  gl.uniform1f(u('uSunInf'),sunInf);
+  gl.uniform1f(u('uFar'),FOG_FAR);
+  gl.uniform1f(u('uTime'),time);
+  gl.uniform1f(u('uMist'),mistAmt);
+}
+
+function drawWaterfall(mirror){
+  gl.useProgram(progFall);setCommon(UF,mirror);
+  gl.enable(gl.BLEND);gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  const distance=effect=>{
+    const p=effect.centre;
+    return (p[0]-cam.pos[0])**2+((mirror?-p[1]:p[1])-cam.pos[1])**2+(p[2]-cam.pos[2])**2;
+  };
+  // 半透明面片從遠到近畫，這段保留深度測試並暫停寫入深度。
+  const ordered=[...waterfallSite.water].sort((a,b)=>distance(b)-distance(a));
+  for(const effect of ordered){gl.bindVertexArray(effect.vao);gl.drawArrays(gl.TRIANGLES,0,effect.count);}
+  gl.depthMask(true);gl.disable(gl.BLEND);
+}
+
+// mirror = 0：正常世界；mirror = 1：對水面鏡射的世界（倒影）
+function drawScene(mirror){
+  // 主畫面和倒影都用選定的山體材質，各自取同一組地形資料。
+  const style=terrainStyleSelect.value;
+  const UT=terrainUniforms[style];
+  gl.useProgram(terrainPrograms[style]);
+  setCommon(UT,mirror);
+  setModel(UT,ID);
+  gl.uniform3f(UT('uCliffSite'),waterfallSite.poolX,waterfallSite.z,waterfallSite.topY);
+  gl.bindVertexArray(meshTerrain.vao);
+  gl.drawElements(gl.TRIANGLES,meshTerrain.count,meshTerrain.idxType,0);
+
+  // 松樹（實例化繪製）與其他道具
+  gl.useProgram(progProp);
+  setCommon(UP,mirror);
+  setModel(UP,ID);
+  gl.uniform3fv(UP('uColor'),[0.075,0.145,0.115]);
+  gl.uniform1f(UP('uDens'),0.94);
+  gl.uniform1f(UP('uFlat'),0);
+  gl.uniform1f(UP('uClip'),0);
+  gl.uniform1f(UP('uVegetation'),1);gl.uniform1f(UP('uStone'),0);gl.uniform1f(UP('uWind'),0);
+  gl.uniform1f(UP('uTreeColor'),1);
+  for(const group of pineGroups){
+    gl.uniform1f(UP('uBlossom'),group.kind==='blossom'?1:0);
+    gl.uniform3fv(UP('uColor'),group.color);gl.uniform3fv(UP('uBarkColor'),group.bark);
+    gl.bindVertexArray(group.mesh.vao);
+    // 用一次實例化繪製畫出同組的近樹，遠樹則由下一批的簡化網格處理。
+    if(group.nearCount)gl.drawArraysInstanced(gl.TRIANGLES,0,group.mesh.count,group.nearCount);
+    gl.bindVertexArray(group.farMesh.vao);
+    if(group.farCount)gl.drawArraysInstanced(gl.TRIANGLES,0,group.farMesh.count,group.farCount);
+  }
+  // 碎岩、草叢與蘆葦沿用相同的淡墨、遠近霧化與鏡射。
+  gl.uniform1f(UP('uTreeColor'),0);
+  gl.uniform1f(UP('uBlossom'),0);
+  for(const group of shoreGroups){
+    gl.uniform3fv(UP('uColor'),group.color);gl.uniform3fv(UP('uBarkColor'),group.bark);
+    gl.uniform1f(UP('uDens'),group.dens);gl.uniform1f(UP('uWind'),group.wind);
+    gl.bindVertexArray(group.mesh.vao);
+    gl.drawArraysInstanced(gl.TRIANGLES,0,group.mesh.count,group.count);
+  }
+  gl.uniform1f(UP('uVegetation'),0);gl.uniform1f(UP('uWind'),0);
+  for(const rock of waterfallSite.rocks)drawProp(rock.mesh,rock.model,[0.34,0.45,0.42],0.94,0,0);
+  drawProp(stoneBridge.mesh,ID,[0.47,0.51,0.45],0.90,0,0,1);
+
+  drawBoat(time);
+  drawBirds(time);
+  if(mirror)drawWaterfall(1);
+}
+
+function drawSky(fw,right,up,aspect,mirror){
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+  gl.useProgram(progSky);
+  gl.uniform3fv(US('uRight'),right);gl.uniform3fv(US('uUp'),up);gl.uniform3fv(US('uFwd'),fw);
+  gl.uniform3fv(US('uSunDir'),sunDir);
+  gl.uniform1f(US('uTanH'),Math.tan(55*Math.PI/360));gl.uniform1f(US('uAspect'),aspect);
+  gl.uniform1f(US('uTime'),time);gl.uniform1f(US('uSunInf'),sunInf);
+  gl.uniform1f(US('uClouds'),cloudAmt);gl.uniform1f(US('uMist'),mistAmt);
+  gl.uniform1f(US('uSkyMirror'),mirror);
+  gl.bindVertexArray(emptyVAO);gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+}
+let time=0,last=0;
+const fpsDisplay=document.getElementById('fps');
+const measureStatus=document.getElementById('measureStatus');
+const lightStatus=document.getElementById('lightStatus');
+const qualitySelect=document.getElementById('quality');
+let fpsStart=null,fpsFrames=0,measurement=null,pendingCapture=null;
+
+function startMeasurement(view,label,resultId){
+  document.getElementById(view).click();
+  paused=false;time=0;updatePause();
+  document.getElementById(resultId).textContent='';
+  measurement={label,resultId,warmStart:null,start:null,conditions:null,seconds:new Uint32Array(30),reported:-1};
+  measureStatus.textContent=label+'暖機中…';
+}
+
+function stopMeasurement(message){
+  if(!measurement)return;
+  measurement=null;
+  measureStatus.textContent=message;
+}
+
+function updateFrameStatistics(ts){
+  // 用原始時間戳統計畫面，移動用的 dt 上限不會掩蓋較長的卡頓。
+  if(fpsStart===null){fpsStart=ts;}
+  else{fpsFrames++;}
+  if(ts-fpsStart>=1000){
+    fpsDisplay.textContent='FPS '+(fpsFrames*1000/(ts-fpsStart)).toFixed(1);
+    fpsStart=ts;fpsFrames=0;
+  }
+
+  const run=measurement;
+  if(!run)return;
+  const conditions=[...cam.pos,cam.yaw,cam.pitch,canvas.width,canvas.height,qualitySelect.value,terrainStyleSelect.value,sunAz,sunEl,sunInf,mistAmt,cloudAmt].join('/');
+  run.conditions??=conditions;
+  if(conditions!==run.conditions||paused){
+    stopMeasurement('量測條件有變動，請重新開始。');
+    return;
+  }
+  run.warmStart??=ts;
+  if(ts-run.warmStart<2000)return;
+  run.start??=ts;
+  const elapsed=ts-run.start;
+  // 把每幀分到固定的一秒區間。不足一秒的區間不會混進最低值。
+  if(elapsed>=30000){
+    const total=run.seconds.reduce((sum,count)=>sum+count,0);
+    document.getElementById(run.resultId).textContent=
+      run.label+'｜'+terrainStyleSelect.selectedOptions[0].textContent+'｜'+qualitySelect.selectedOptions[0].textContent+'｜'+canvas.width+' × '+canvas.height+
+      '｜平均 '+(total/30).toFixed(1)+' FPS｜最低 '+Math.min(...run.seconds)+' FPS';
+    stopMeasurement('已完成 30 秒量測。');
+    return;
+  }
+  const second=Math.floor(elapsed/1000);
+  run.seconds[second]++;
+  if(run.reported!==second){
+    run.reported=second;
+    measureStatus.textContent=run.label+'量測中，剩 '+(30-second)+' 秒。';
+  }
+}
+
+document.getElementById('measureLandscape').addEventListener('click',()=>startMeasurement('landscapeView','山水全景','landscapeResult'));
+document.getElementById('measureWaterfall').addEventListener('click',()=>startMeasurement('waterfallView','瀑布視角','waterfallResult'));
+
+function queueLightCapture(side){
+  stopMeasurement('已切換到光照比較，請重新量測。');
+  document.getElementById('landscapeView').click();
+  paused=true;time=18;updatePause();
+  // 方向以鏡頭左右為準。兩張圖使用相同的相機與其他場景參數。
+  const azimuth=Math.round(cam.yaw*180/Math.PI+side*65);
+  const settings={az:(azimuth+360)%360,el:20,inf:0.5,mist:1,cloud:1,quality:'balanced'};
+  for(const [id,value] of Object.entries(settings)){
+    const control=document.getElementById(id);
+    control.value=value;
+    control.dispatchEvent(new Event(id==='quality'?'change':'input'));
+  }
+  const label=side<0?'左光':'右光';
+  pendingCapture={label,azimuth:settings.az};
+}
+
+function saveLightCapture(capture){
+  // 在這一幀繪製完成後立即讀取畫布，PNG 不含操作面板。
+  canvas.toBlob(blob=>{
+    if(!blob){lightStatus.textContent='無法產生截圖，請再試一次。';return;}
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='山水全景-'+capture.style+'-'+capture.label+'-'+capture.azimuth+'度.png';
+    link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+    lightStatus.textContent=capture.label+' '+capture.azimuth+'°，已送出 PNG 下載。';
+  },'image/png');
+}
+
+document.getElementById('lightLeft').addEventListener('click',()=>queueLightCapture(-1));
+document.getElementById('lightRight').addEventListener('click',()=>queueLightCapture(1));
+
+function frame(ts){
+  if(document.hidden||gl.isContextLost()){animationId=0;last=0;return;}
+  // dt 上限為 50 ms，避免卡頓後移動突然跳太遠。測 FPS 時看原始 ts 的間隔。
+  const dt=last?Math.min(0.05,(ts-last)/1000):0;last=ts;
+  // 暫停只凍結動畫時間，畫面仍更新，因此可以移動相機或轉太陽來做對照。
+  if(!paused) time+=dt;
+
+  // 移動
+  const f=camFwd(), r=[Math.cos(cam.yaw),0,Math.sin(cam.yaw)];
+  // 把各方向的輸入加總，後面用向量長度校正斜向移動的速度。
+  let mx=0,my=0,mz=0;
+  if(pressed('KeyW')){mx+=f[0];my+=f[1];mz+=f[2];}
+  if(pressed('KeyS')){mx-=f[0];my-=f[1];mz-=f[2];}
+  if(pressed('KeyD')){mx+=r[0];mz+=r[2];}
+  if(pressed('KeyA')){mx-=r[0];mz-=r[2];}
+  if(pressed('KeyE')||pressed('Space')) my+=1;
+  if(pressed('KeyQ')) my-=1;
+  const ml=Math.hypot(mx,my,mz);
+  if(ml>0){
+    const sp=cam.speed*(keys.ShiftLeft||keys.ShiftRight?3:1)*dt/ml;
+    const dx=mx*sp,dy=my*sp,dz=mz*sp;
+    // 把一次移動切成小步檢查地形，減少高速移動跨過陡坡的情況。
+    const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/0.75)),lim=HALF*0.92;
+    for(let i=0;i<steps;i++){
+      const nx=Math.max(-lim,Math.min(lim,cam.pos[0]+dx/steps));
+      const nz=Math.max(-lim,Math.min(lim,cam.pos[2]+dz/steps));
+      const nextY=Math.max(2.2,Math.min(240,cam.pos[1]+dy/steps));
+      const floor=Math.max(sceneGroundH(nx,nz),0)+2.2;
+      // 空中可自由飛行；貼地遇到陡壁時阻擋水平移動。
+      if(floor<=nextY+Math.max(0.05,Math.hypot(dx,dz)/steps*0.9)){
+        cam.pos[0]=nx;cam.pos[2]=nz;cam.pos[1]=Math.max(nextY,floor);
+      }else cam.pos[1]=Math.max(nextY,Math.max(sceneGroundH(cam.pos[0],cam.pos[2]),0)+2.2);
+    }
+  }
+  if(pressed('ArrowLeft')) cam.yaw-=1.5*dt;
+  if(pressed('ArrowRight')) cam.yaw+=1.5*dt;
+  if(pressed('ArrowUp')) cam.pitch=Math.min(1.4,cam.pitch+1.0*dt);
+  if(pressed('ArrowDown')) cam.pitch=Math.max(-1.4,cam.pitch-1.0*dt);
+  // 範圍限制與地面碰撞：不會穿進山裡或掉進水下
+  const lim=HALF*0.92;
+  cam.pos[0]=Math.max(-lim,Math.min(lim,cam.pos[0]));
+  cam.pos[2]=Math.max(-lim,Math.min(lim,cam.pos[2]));
+  const ground=Math.max(sceneGroundH(cam.pos[0],cam.pos[2]),0)+2.2;
+  cam.pos[1]=Math.max(ground,Math.min(240,cam.pos[1]));
+
+  // 尺寸
+  const cssW=Math.max(1,canvas.clientWidth),cssH=Math.max(1,canvas.clientHeight);
+  // 最小的限制決定實際渲染倍率，包括裝置倍率、畫質和 GPU 尺寸上限。
+  const dpr=Math.min(window.devicePixelRatio||1,quality.dpr,Math.sqrt(quality.pixels/(cssW*cssH)),maxRenderSize/cssW,maxRenderSize/cssH);
+  const w=Math.max(1,Math.floor(cssW*dpr)), h=Math.max(1,Math.floor(cssH*dpr));
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+  gl.viewport(0,0,w,h);
+  const aspect=w/Math.max(h,1), fovy=55*Math.PI/180;
+  const fw=camFwd();
+  const right=[Math.cos(cam.yaw),0,Math.sin(cam.yaw)];
+  const up=[right[1]*fw[2]-right[2]*fw[1], right[2]*fw[0]-right[0]*fw[2], right[0]*fw[1]-right[1]*fw[0]];
+  VP=M.mul(M.persp(fovy,aspect,0.6,1600),M.look(cam.pos,fw,[0,1,0]));
+
+  if(!resizeReflection(w,h))return;
+  updateForestBatches();
+  // 第一步：把鏡射場景繪製到倒影貼圖。
+  gl.bindTexture(gl.TEXTURE_2D,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,reflectionTarget.framebuffer);
+  gl.viewport(0,0,reflectionTarget.width,reflectionTarget.height);
+  gl.clearColor(0.89,0.93,0.94,1);
+  gl.depthMask(true);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+  gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // 先把鏡射天空與景物畫到倒影貼圖，再回到畫布繪製主場景。
+  drawSky(fw,right,up,aspect,1);
+  drawScene(1);
+  // 第二步：清除主畫布，依序畫天空和不透明景物。
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
+  gl.clearColor(0.962,0.951,0.923,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  // 先畫天空，讓它成為所有模型背後的底色。
+  drawSky(fw,right,up,aspect,0);
+
+  // 畫出山體和道具，接著由水面著色器取樣倒影貼圖。
+  drawScene(0);
+  gl.disable(gl.BLEND);
+  gl.depthMask(false);
+  gl.useProgram(progWater);
+  setCommon(UW,0);
+  setBoatWater(time);
+  setModel(UW,ID);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,reflectionTarget.texture);
+  // 水面著色器從第 0 個貼圖單元讀取第一步繪製的倒影。
+  gl.uniform1i(UW('uReflection'),0);
+  gl.uniform2f(UW('uResolution'),w,h);
+  // 把倒影貼圖一個像素的大小傳給水面，擾動與柔化可以用像素當單位。
+  gl.uniform2f(UW('uReflectionTexel'),1/reflectionTarget.width,1/reflectionTarget.height);
+  gl.bindVertexArray(meshWater.vao);
+  gl.drawArrays(gl.TRIANGLES,0,meshWater.count);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  // 第三步：最後合成半透明的瀑布效果，讓水霧疊在主河面上。
+  drawWaterfall(0);
+
+  updateFrameStatistics(ts);
+  if(pendingCapture){
+    const capture=pendingCapture;pendingCapture=null;
+    saveLightCapture({...capture,style:terrainStyleSelect.selectedOptions[0].textContent});
+  }
+  animationId=requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange',()=>{
+  clearInput();last=0;
+  if(document.hidden){
+    cancelAnimationFrame(animationId);animationId=0;
+    fpsStart=null;fpsFrames=0;fpsDisplay.textContent='FPS —';
+    pendingCapture=null;
+    stopMeasurement('頁面已切到背景，請重新量測。');
+  }
+  else if(ready&&!gl.isContextLost()&&!animationId) animationId=requestAnimationFrame(frame);
+});
+if(gl.isContextLost())throw new Error('繪圖連線在初始化時中斷，請重新載入。');
+ready=true;status.hidden=true;
+animationId=requestAnimationFrame(frame);
+})().catch(error=>{
+  fail(error.message||String(error));
+  document.getElementById('status').hidden=false;
+  document.getElementById('statusText').textContent='無法完成畫面初始化，請查看下方錯誤訊息。';
+  document.getElementById('reload').hidden=false;
+});
+</script>
+</body>
+</html>
